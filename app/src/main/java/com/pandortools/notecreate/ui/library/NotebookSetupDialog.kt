@@ -73,6 +73,7 @@ fun NotebookSetupDialog(
     existing: Notebook?,
     defaults: SettingsState,
     onDismiss: () -> Unit,
+    groups: List<String> = emptyList(),
     onConfirm: (NotebookSpec) -> Unit,
 ) {
     var title by remember { mutableStateOf(existing?.title ?: "") }
@@ -84,6 +85,7 @@ fun NotebookSetupDialog(
     var format by remember { mutableStateOf(existing?.format ?: defaults.defaultFormat) }
     var customWidth by remember { mutableFloatStateOf(existing?.customWidthMm ?: 210f) }
     var customHeight by remember { mutableFloatStateOf(existing?.customHeightMm ?: 297f) }
+    var groupName by remember { mutableStateOf(existing?.groupName.orEmpty()) }
     var orientation by remember { mutableStateOf(existing?.orientation ?: defaults.defaultOrientation) }
     var paper by remember { mutableStateOf(existing?.paperType ?: defaults.defaultPaper) }
     var paperColor by remember { mutableIntStateOf(existing?.paperColor ?: defaults.defaultPaperColor) }
@@ -128,6 +130,18 @@ fun NotebookSetupDialog(
                             value = title, onValueChange = { title = it },
                             label = { Text("Название") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                         )
+                        OutlinedTextField(
+                            value = groupName, onValueChange = { groupName = it },
+                            label = { Text("Группа (необязательно)") },
+                            supportingText = { Text("Например: Учёба, Работа или Идеи") },
+                            singleLine = true, modifier = Modifier.fillMaxWidth(),
+                        )
+                        if (groups.isNotEmpty()) Section("Или выбрать группу") {
+                            groups.forEach { group ->
+                                FilterChip(selected = groupName.equals(group, ignoreCase = true),
+                                    onClick = { groupName = group }, label = { Text(group) })
+                            }
+                        }
                         Section("Тип") {
                             NotebookTemplate.entries.forEach { t ->
                                 FilterChip(selected = template == t, onClick = { template = t }, label = { Text(t.title) })
@@ -186,6 +200,7 @@ fun NotebookSetupDialog(
                                         format = format, orientation = orientation,
                                         customWidthMm = if (format == PageFormat.CUSTOM) customWidth else null,
                                         customHeightMm = if (format == PageFormat.CUSTOM) customHeight else null,
+                                        groupName = groupName.trim().takeIf { it.isNotEmpty() },
                                     )
                                 )
                             }) { Text(if (existing == null) "Создать" else "Сохранить") }

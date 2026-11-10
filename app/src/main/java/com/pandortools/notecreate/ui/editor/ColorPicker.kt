@@ -25,11 +25,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -73,12 +77,19 @@ fun ColorPickerDialog(
     }
 
     Dialog(onDismissRequest = onDismiss) {
-        Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surface) {
+        Surface(shape = RoundedCornerShape(30.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
             Column(
-                Modifier.padding(20.dp).width(340.dp).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+                Modifier.padding(22.dp).width(380.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                Text("Цвет", style = MaterialTheme.typography.titleLarge)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Палитра", style = MaterialTheme.typography.headlineSmall)
+                        Text("Цвет текущего инструмента", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, "Закрыть") }
+                }
                 // Насыщенность × яркость
                 val hueColor = Color(hsvToInt(hue, 1f, 1f))
                 Box(
@@ -133,8 +144,8 @@ fun ColorPickerDialog(
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
-                        Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(Color(current))
-                            .border(1.dp, Color.Black.copy(alpha = 0.15f), RoundedCornerShape(10.dp))
+                        Modifier.size(48.dp).clip(RoundedCornerShape(14.dp)).background(Color(current))
+                            .border(2.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(14.dp))
                     )
                     Spacer(Modifier.width(12.dp))
                     OutlinedTextField(
@@ -154,15 +165,15 @@ fun ColorPickerDialog(
                     )
                 }
                 if (recent.isNotEmpty()) {
-                    Text("Недавние", style = MaterialTheme.typography.labelLarge)
+                    Text("Недавние цвета", style = MaterialTheme.typography.titleSmall)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        recent.forEach { c -> ColorDot(c, false, 30) { setColor(c) } }
+                        recent.forEach { c -> ColorDot(c, c == current, 36) { setColor(c) } }
                     }
                 }
                 Palette.presets.forEach { (name, colors) ->
-                    Text(name, style = MaterialTheme.typography.labelLarge)
+                    Text(name, style = MaterialTheme.typography.titleSmall)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        colors.forEach { c -> ColorDot(c, false, 30) { setColor(c) } }
+                        colors.forEach { c -> ColorDot(c, c == current, 36) { setColor(c) } }
                     }
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {

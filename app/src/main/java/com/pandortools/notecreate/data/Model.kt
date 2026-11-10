@@ -138,6 +138,7 @@ data class Notebook(
     val orientation: Orientation = Orientation.PORTRAIT,
     val customWidthMm: Float? = null,
     val customHeightMm: Float? = null,
+    val groupName: String? = null,
     /** Идентификаторы страниц по порядку. */
     val pages: List<String> = emptyList(),
     /** Дата каждой страницы (для дневника), по id. */
@@ -168,6 +169,7 @@ data class NotebookSpec(
     val orientation: Orientation,
     val customWidthMm: Float? = null,
     val customHeightMm: Float? = null,
+    val groupName: String? = null,
 )
 
 object Palette {

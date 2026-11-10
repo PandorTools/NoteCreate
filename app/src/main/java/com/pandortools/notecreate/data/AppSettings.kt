@@ -28,6 +28,7 @@ data class SettingsState(
     val recentColors: List<Int> = emptyList(),
     val penWidths: Map<PenType, Float> = PenType.entries.associateWith { it.defaultWidth },
     val smoothing: Float = 0.35f,
+    val highlighterOpacity: Float = 0.30f,
     val lastNotebookId: String? = null,
 )
 
@@ -70,6 +71,7 @@ class AppSettings(context: Context) {
             recentColors = ints("recentColors", emptyList()),
             penWidths = PenType.entries.associateWith { prefs.getFloat("width_" + it.name, it.defaultWidth) },
             smoothing = prefs.getFloat("smoothing", d.smoothing),
+            highlighterOpacity = prefs.getFloat("highlighterOpacity", d.highlighterOpacity).coerceIn(0.08f, 0.8f),
             lastNotebookId = prefs.getString("lastNotebookId", null),
         )
     }
@@ -91,6 +93,7 @@ class AppSettings(context: Context) {
         putString("recentColors", s.recentColors.joinToString(","))
         s.penWidths.forEach { (k, v) -> putFloat("width_" + k.name, v) }
         putFloat("smoothing", s.smoothing)
+        putFloat("highlighterOpacity", s.highlighterOpacity)
         putString("lastNotebookId", s.lastNotebookId)
     }
 }

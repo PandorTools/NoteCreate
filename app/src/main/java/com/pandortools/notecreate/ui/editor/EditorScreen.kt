@@ -1,4 +1,4 @@
-@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 
 package com.pandortools.notecreate.ui.editor
 
@@ -59,6 +59,9 @@ import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -72,6 +75,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -143,6 +147,7 @@ fun EditorScreen(notebookId: String, onBack: () -> Unit) {
     var showMore by remember { mutableStateOf(false) }
     var showPages by remember { mutableStateOf(false) }
     var showNotebookSettings by remember { mutableStateOf(false) }
+    var showDatePicker by remember { mutableStateOf(false) }
     var clipboardChip by remember { mutableStateOf(false) }
 
     val pageView = remember { PageView(context) }
@@ -267,7 +272,7 @@ fun EditorScreen(notebookId: String, onBack: () -> Unit) {
                     v.notebook = currentNb
                     v.tool = tool
                     v.pen = pen
-                    v.color = color
+                    v.color = if (pen == PenType.HIGHLIGHTER) Color(color).copy(alpha = settings.highlighterOpacity).toArgb() else color
                     v.penWidth = settings.penWidths[pen] ?: pen.defaultWidth
                     v.eraserMode = eraserMode
                     v.eraserSize = eraserSize
@@ -297,15 +302,18 @@ fun EditorScreen(notebookId: String, onBack: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     IconButton(onClick = { vm.flush(); onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад") }
+                    TextButton(onClick = { showDatePicker = true }) {
+                        Text(page?.date?.let { java.text.SimpleDateFormat("d MMM yyyy", java.util.Locale("ru")).format(java.util.Date(it)) } ?: "Выбрать дату")
+                    }
                     Bar()
                     PenType.entries.forEach { p ->
                         ToolButton(
                             icon = penIcon(p), label = p.title,
                             selected = tool == EditorTool.PEN && pen == p,
-                        ) { tool = EditorTool.PEN; pen = p }
+                        ) { tool = EditorTool.PEN; pen = p; showWidth = true }
                     }
-                    ToolButton(ToolIcons.Eraser, "Ластик", tool == EditorTool.ERASER) { tool = EditorTool.ERASER }
-                    ToolButton(ToolIcons.Lasso, "Лассо", tool == EditorTool.LASSO) { tool = EditorTool.LASSO }
+                    ToolButton(ToolIcons.Eraser, "Ластик", tool == EditorTool.ERASER) { tool = EditorTool.ERASER; showWidth = true }
+                    ToolButton(ToolIcons.Lasso, "Лассо", tool == EditorTool.LASSO) { tool = EditorTool.LASSO; showWidth = true }
                     Bar()
                     settings.favoriteColors.take(6).forEachIndexed { i, c ->
                         Box(
@@ -332,21 +340,35 @@ fun EditorScreen(notebookId: String, onBack: () -> Unit) {
                             Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp).width(280.dp)) {
                                 if (tool == EditorTool.ERASER) {
                                     Text("Ластик · стирает только под кончиком", style = MaterialTheme.typography.titleSmall)
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                         FilterChip(eraserMode == EraserMode.AREA, { eraserMode = EraserMode.AREA }, { Text("Частично") })
+                                        FilterChip(eraserMode == EraserMode.SOFT, { eraserMode = EraserMode.SOFT }, { Text("Мягкий") })
                                         FilterChip(eraserMode == EraserMode.STROKE, { eraserMode = EraserMode.STROKE }, { Text("Весь штрих") })
                                     }
+                                    Text(when (eraserMode) {
+                                        EraserMode.AREA -> "Удаляет только часть штриха под ластиком."
+                                        EraserMode.SOFT -> "Постепенно делает линию светлее, сохраняя её."
+                                        EraserMode.STROKE -> "Удаляет целый штрих при касании."
+                                    }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     Text("Размер: ${eraserSize.roundToInt()}", style = MaterialTheme.typography.bodySmall)
                                     Slider(eraserSize, { eraserSize = it }, valueRange = 2f..40f)
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text("Только маркер", Modifier.weight(1f))
                                         Switch(eraseOnlyHighlighter, { eraseOnlyHighlighter = it })
                                     }
+                                } else if (tool == EditorTool.LASSO) {
+                                    Text("Лассо", style = MaterialTheme.typography.titleSmall)
+                                    Text("Обведи замкнутым контуром штрихи или изображение. Перетащи выделение, чтобы переместить; потяни нижний маркер для размера, верхний — для поворота.",
+                                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 } else {
                                     val w = settings.penWidths[pen] ?: pen.defaultWidth
                                     Text("${pen.title}: толщина ${"%.1f".format(w)}", style = MaterialTheme.typography.titleSmall)
                                     val range = if (pen == PenType.HIGHLIGHTER) 4f..30f else 0.4f..12f
                                     Slider(w, { v -> settingsStore.update { s -> s.copy(penWidths = s.penWidths + (pen to v)) } }, valueRange = range)
+                                    if (pen == PenType.HIGHLIGHTER) {
+                                        Text("Непрозрачность: ${(settings.highlighterOpacity * 100).roundToInt()}%", style = MaterialTheme.typography.bodySmall)
+                                        Slider(settings.highlighterOpacity, { v -> settingsStore.update { it.copy(highlighterOpacity = v) } }, valueRange = 0.08f..0.8f)
+                                    }
                                     Box(Modifier.height(36.dp).width(260.dp), contentAlignment = Alignment.Center) {
                                         Box(
                                             Modifier.width(220.dp).height((w * 1.4f).coerceIn(1f, 36f).dp)
@@ -507,6 +529,21 @@ fun EditorScreen(notebookId: String, onBack: () -> Unit) {
                 s.copy(favoriteColors = s.favoriteColors.toMutableList().also { l -> if (pickerSlot < l.size) l[pickerSlot] = c })
             }
         }
+    }
+    if (showDatePicker) {
+        val dateState = rememberDatePickerState(initialSelectedDateMillis = page?.date ?: System.currentTimeMillis())
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    dateState.selectedDateMillis?.let(vm::setPageDate)
+                    showDatePicker = false
+                }) { Text("Сохранить") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { showDatePicker = false }) { Text("Отмена") }
+            },
+        ) { DatePicker(state = dateState) }
     }
     if (showPages && currentNb != null) {
         PageOverviewDialog(

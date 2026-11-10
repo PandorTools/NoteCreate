@@ -122,6 +122,15 @@ class EditorViewModel(private val notebookId: String) : ViewModel() {
         }
     }
 
+    fun setPageDate(dateMillis: Long) {
+        val current = _page.value ?: return
+        flush()
+        _page.value = current.copy(date = dateMillis)
+        viewModelScope.launch {
+            updateNotebook { it.copy(pageDates = it.pageDates + (current.id to dateMillis)) }
+        }
+    }
+
     private fun rememberLastPage(i: Int) {
         if (_notebook.value?.lastPage == i) return
         saveScope.launch { updateNotebook { it.copy(lastPage = i) } }
@@ -182,7 +191,6 @@ class EditorViewModel(private val notebookId: String) : ViewModel() {
         if (j < 0) return null
         if (j >= nb.pages.size) {
             // Листаем дальше последней страницы — будет новая чистая страница.
-            if (_page.value?.data?.isEmpty == true) return null
             return TurnTarget(null, PageData(), System.currentTimeMillis())
         }
         val id = nb.pages[j]

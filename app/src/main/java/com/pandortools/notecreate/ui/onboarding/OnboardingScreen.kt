@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -25,6 +27,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -55,6 +58,9 @@ fun OnboardingScreen(onDone: (Notebook) -> Unit) {
     val settings = AppGraph.settings
     val s0 = settings.value
     var format by remember { mutableStateOf(s0.defaultFormat) }
+    var customWidth by remember { mutableFloatStateOf(210f) }
+    var customHeight by remember { mutableFloatStateOf(297f) }
+    var template by remember { mutableStateOf(NotebookTemplate.DIARY) }
     var orientation by remember { mutableStateOf(s0.defaultOrientation) }
     var paper by remember { mutableStateOf(s0.defaultPaper) }
     var paperColor by remember { mutableIntStateOf(s0.defaultPaperColor) }
@@ -77,8 +83,27 @@ fun OnboardingScreen(onDone: (Notebook) -> Unit) {
                 style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
             Spacer(Modifier.height(4.dp))
+            Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.primaryContainer,
+                modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Три шага — и можно писать", style = MaterialTheme.typography.titleMedium)
+                    Text("Выбери тип тетради, формат листа и разметку. Записи сохраняются только на этом устройстве.",
+                        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.82f))
+                }
+            }
+            Section("Что создаём") {
+                NotebookTemplate.entries.forEach { t -> FilterChip(template == t, { template = t }, { Text(t.title) }) }
+            }
             Section("Формат листа") {
                 PageFormat.entries.forEach { f -> FilterChip(format == f, { format = f }, { Text(f.title) }) }
+            }
+            if (format == PageFormat.CUSTOM) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(customWidth.toInt().toString(), { customWidth = it.toFloatOrNull()?.coerceIn(50f, 1000f) ?: customWidth },
+                        label = { Text("Ширина, мм") }, singleLine = true, modifier = Modifier.weight(1f))
+                    OutlinedTextField(customHeight.toInt().toString(), { customHeight = it.toFloatOrNull()?.coerceIn(50f, 1000f) ?: customHeight },
+                        label = { Text("Высота, мм") }, singleLine = true, modifier = Modifier.weight(1f))
+                }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 androidx.compose.foundation.Canvas(Modifier.size(62.dp, 84.dp)) {
@@ -118,10 +143,12 @@ fun OnboardingScreen(onDone: (Notebook) -> Unit) {
                     scope.launch {
                         val nb = AppGraph.repository.create(
                             NotebookSpec(
-                                title = "Мой дневник", template = NotebookTemplate.DIARY,
+                                title = if (template == NotebookTemplate.DIARY) "Мой дневник" else "Моя тетрадь", template = template,
                                 coverColor = Palette.coverColors[0], coverMaterial = CoverMaterial.LEATHER,
                                 elastic = true, ribbon = true, paperType = paper, paperColor = paperColor,
                                 format = format, orientation = orientation,
+                                customWidthMm = if (format == PageFormat.CUSTOM) customWidth else null,
+                                customHeightMm = if (format == PageFormat.CUSTOM) customHeight else null,
                             )
                         )
                         onDone(nb)

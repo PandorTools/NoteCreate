@@ -33,7 +33,7 @@ import kotlin.math.max
 import kotlin.math.min
 
 enum class EditorTool { PEN, ERASER, LASSO }
-enum class EraserMode { STROKE, AREA }
+enum class EraserMode { STROKE, AREA, SOFT }
 
 data class SelectionInfo(
     val strokes: Int,
@@ -132,7 +132,7 @@ class PageView(context: Context) : View(context) {
     /** Показать страницу. Если key совпадает с текущим — ничего не делаем. */
     fun setPage(key: String, data: PageData, date: Long?) {
         // Повторная доставка того же состояния от экрана — игнорируем, чтобы не сбить текущий жест.
-        if (key == pageKey && (data === page || data === lastExternal)) return
+        if (key == pageKey && date == pageDate && (data === page || data === lastExternal)) return
         lastExternal = data
         if (key != pageKey) {
             undoStack.clear(); redoStack.clear()
@@ -356,9 +356,18 @@ class PageView(context: Context) : View(context) {
             p.moveTo(lassoPts[0], lassoPts[1])
             var i = 2
             while (i < lassoPts.size) { p.lineTo(lassoPts[i], lassoPts[i + 1]); i += 2 }
+            p.close()
+            uiPaint.style = Paint.Style.FILL
+            uiPaint.pathEffect = null
+            uiPaint.color = Color.argb(24, 51, 101, 138)
+            canvas.drawPath(p, uiPaint)
+            uiPaint.style = Paint.Style.STROKE
+            uiPaint.color = Color.WHITE
+            uiPaint.strokeWidth = 5f / currentScale()
+            canvas.drawPath(p, uiPaint)
             uiPaint.pathEffect = dash
-            uiPaint.strokeWidth = 1.5f / currentScale()
-            uiPaint.color = Color.rgb(232, 115, 74)
+            uiPaint.strokeWidth = 2.5f / currentScale()
+            uiPaint.color = Color.rgb(51, 101, 138)
             canvas.drawPath(p, uiPaint)
             uiPaint.pathEffect = null
         }
@@ -401,18 +410,23 @@ class PageView(context: Context) : View(context) {
         uiPaint.color = Color.rgb(51, 101, 138)
         canvas.drawRect(b, uiPaint)
         uiPaint.pathEffect = null
-        val hr = HANDLE_DP * density / scale / 2f
-        shadowPaint.color = Color.rgb(51, 101, 138)
-        canvas.drawCircle(b.right, b.bottom, hr, shadowPaint)
-        shadowPaint.color = Color.WHITE
-        canvas.drawCircle(b.right, b.bottom, hr * 0.45f, shadowPaint)
+        val hr = 8f * density / scale
+        val outer = 15f * density / scale
+        listOf(PointF(b.right, b.bottom), PointF(b.right, b.top)).forEach { handle ->
+            shadowPaint.color = Color.WHITE
+            canvas.drawCircle(handle.x, handle.y, outer, shadowPaint)
+            shadowPaint.color = Color.rgb(51, 101, 138)
+            canvas.drawCircle(handle.x, handle.y, hr, shadowPaint)
+            shadowPaint.color = Color.WHITE
+            canvas.drawCircle(handle.x, handle.y, hr * 0.42f, shadowPaint)
+        }
     }
 
     // =====================================================================
     // Ввод
     // =====================================================================
 
-    private enum class Mode { NONE, DRAW, ERASE, LASSO, SEL_MOVE, SEL_SCALE, PINCH, PAN, TURN_PENDING, FINGER_IDLE }
+    private enum class Mode { NONE, DRAW, ERASE, LASSO, SEL_MOVE, SEL_SCALE, SEL_ROTATE, PINCH, PAN, TURN_PENDING, FINGER_IDLE }
 
     private var mode = Mode.NONE
     private var activePointerId = -1
@@ -444,6 +458,8 @@ class PageView(context: Context) : View(context) {
     private val selMatrix = Matrix()
     private var selStartX = 0f
     private var selStartY = 0f
+    private var selStartAngle = 0f
+    private var selRotation = 0f
 
     // жесты пальцами
     private var downX = 0f
@@ -528,9 +544,21 @@ class PageView(context: Context) : View(context) {
                         }
                         return true
                     }
+                    val selected = selection
+                    if (action == MotionEvent.ACTION_DOWN && selected != null) {
+                        val point = toPage(e.getX(idx), e.getY(idx))
+                        val margin = 26f * density / currentScale()
+                        val bounds = RectF(selected.bounds).apply { inset(-margin, -margin) }
+                        if (bounds.contains(point.x, point.y)) {
+                            removeCallbacks(longPressRunnable)
+                            activePointerId = e.getPointerId(idx)
+                            startPrimary(e, idx, stylus = false)
+                            return true
+                        }
+                    }
                     val stylusRecently = e.eventTime - lastStylusTime < 600
                     if (mode == Mode.DRAW || mode == Mode.ERASE || mode == Mode.LASSO ||
-                        mode == Mode.SEL_MOVE || mode == Mode.SEL_SCALE) {
+                        mode == Mode.SEL_MOVE || mode == Mode.SEL_SCALE || mode == Mode.SEL_ROTATE) {
                         if (activePointerIsStylus || stylusRecently) return true
                         // Второй палец во время рисования пальцем — отменяем штрих и масштабируем.
                         cancelGesture()
@@ -542,7 +570,7 @@ class PageView(context: Context) : View(context) {
             MotionEvent.ACTION_MOVE -> onMove(e)
             MotionEvent.ACTION_POINTER_UP -> {
                 if (e.getPointerId(e.actionIndex) == activePointerId &&
-                    (mode == Mode.DRAW || mode == Mode.ERASE || mode == Mode.LASSO || mode == Mode.SEL_MOVE || mode == Mode.SEL_SCALE)) {
+                    (mode == Mode.DRAW || mode == Mode.ERASE || mode == Mode.LASSO || mode == Mode.SEL_MOVE || mode == Mode.SEL_SCALE || mode == Mode.SEL_ROTATE)) {
                     finishPrimary(e)
                 } else if (mode == Mode.PINCH && e.pointerCount - 1 < 2) {
                     finishPinch(e)
@@ -551,7 +579,7 @@ class PageView(context: Context) : View(context) {
             MotionEvent.ACTION_UP -> {
                 removeCallbacks(longPressRunnable)
                 when (mode) {
-                    Mode.DRAW, Mode.ERASE, Mode.LASSO, Mode.SEL_MOVE, Mode.SEL_SCALE -> finishPrimary(e)
+                    Mode.DRAW, Mode.ERASE, Mode.LASSO, Mode.SEL_MOVE, Mode.SEL_SCALE, Mode.SEL_ROTATE -> finishPrimary(e)
                     Mode.PINCH -> finishPinch(e)
                     Mode.FINGER_IDLE, Mode.TURN_PENDING -> onFingerTap(e)
                     else -> Unit
@@ -574,9 +602,19 @@ class PageView(context: Context) : View(context) {
         val p = toPage(x, y)
 
         // Сначала — взаимодействие с выделением
-        val sel = selection
+        var sel = selection
+        if (sel == null && stylus && tool == EditorTool.PEN) {
+            val image = page.images.asReversed().firstOrNull { !it.locked && Geometry.imageContains(it, p.x, p.y) }
+            if (image != null) {
+                selectImage(image.id)
+                sel = selection
+            }
+        }
         if (sel != null) {
-            val hr = HANDLE_DP * density / currentScale()
+            val hr = 24f * density / currentScale()
+            if (hypot(p.x - sel.bounds.right, p.y - sel.bounds.top) <= hr) {
+                beginSelTransform(Mode.SEL_ROTATE, p); return
+            }
             if (hypot(p.x - sel.bounds.right, p.y - sel.bounds.bottom) <= hr) {
                 beginSelTransform(Mode.SEL_SCALE, p); return
             }
@@ -646,7 +684,7 @@ class PageView(context: Context) : View(context) {
 
     private fun onMove(e: MotionEvent) {
         when (mode) {
-            Mode.DRAW, Mode.ERASE, Mode.LASSO, Mode.SEL_MOVE, Mode.SEL_SCALE -> {
+            Mode.DRAW, Mode.ERASE, Mode.LASSO, Mode.SEL_MOVE, Mode.SEL_SCALE, Mode.SEL_ROTATE -> {
                 val idx = e.findPointerIndex(activePointerId)
                 if (idx < 0) return
                 for (h in 0 until e.historySize) primaryMove(e, idx, e.getHistoricalX(idx, h), e.getHistoricalY(idx, h), h)
@@ -666,13 +704,31 @@ class PageView(context: Context) : View(context) {
             Mode.FINGER_IDLE, Mode.TURN_PENDING -> {
                 val dx = e.x - downX
                 val dy = e.y - downY
+                if (mode == Mode.TURN_PENDING) {
+                    if (hypot(dx, dy) <= touchSlop) return
+                    removeCallbacks(longPressRunnable)
+                    gestureMoved = true
+                    val threshold = max(64f * density, touchSlop * 3f)
+                    if (abs(dx) > threshold && abs(dx) > abs(dy) * 1.2f) {
+                        val dir = if (downX > width / 2f) 1 else -1
+                        if ((dir == 1 && dx < 0) || (dir == -1 && dx > 0)) startTurn(dir, e)
+                        else mode = Mode.NONE
+                    } else if (fingerDraw && abs(dy) > touchSlop && abs(dy) > abs(dx) * 1.2f && e.pointerCount == 1) {
+                        val fake = MotionEvent.obtain(e)
+                        fake.setLocation(downX, downY)
+                        startPrimary(fake, 0, stylus = false)
+                        fake.recycle()
+                        primaryMove(e, 0, e.x, e.y, -1)
+                    } else if (abs(dx) > abs(dy) * 1.2f) {
+                        // Keep waiting for a deliberate horizontal swipe to cross the threshold.
+                    } else {
+                        mode = Mode.NONE
+                    }
+                    return
+                }
                 if (hypot(dx, dy) > touchSlop) {
                     removeCallbacks(longPressRunnable)
                     gestureMoved = true
-                    if (mode == Mode.TURN_PENDING && abs(dx) > abs(dy)) {
-                        val dir = if (downX > width / 2f) 1 else -1
-                        if ((dir == 1 && dx < 0) || (dir == -1 && dx > 0)) { startTurn(dir, e); return }
-                    }
                     if (userScale() > 1.01f) {
                         mode = Mode.PAN; panLastX = e.x; panLastY = e.y
                     } else if (fingerDraw && e.pointerCount == 1) {
@@ -710,6 +766,12 @@ class PageView(context: Context) : View(context) {
                 val s = max((p.x - b.left) / w0, (p.y - b.top) / h0).coerceIn(0.1f, 10f)
                 selMatrix.setScale(s, s, b.left, b.top)
             }
+            Mode.SEL_ROTATE -> {
+                val b = selection?.bounds ?: return
+                val angle = Math.toDegrees(kotlin.math.atan2((p.y - b.centerY()).toDouble(), (p.x - b.centerX()).toDouble())).toFloat()
+                selRotation = angle - selStartAngle
+                selMatrix.setRotate(selRotation, b.centerX(), b.centerY())
+            }
             else -> Unit
         }
     }
@@ -719,7 +781,7 @@ class PageView(context: Context) : View(context) {
             Mode.DRAW -> commitStroke()
             Mode.ERASE -> finishErase()
             Mode.LASSO -> finishLasso()
-            Mode.SEL_MOVE, Mode.SEL_SCALE -> finishSelTransform()
+            Mode.SEL_MOVE, Mode.SEL_SCALE, Mode.SEL_ROTATE -> finishSelTransform()
             else -> Unit
         }
         mode = Mode.NONE
@@ -735,7 +797,7 @@ class PageView(context: Context) : View(context) {
             Mode.DRAW -> curCount = 0
             Mode.ERASE -> { eraseWorking = null; undoBase?.let { page = it }; undoBase = null; invalidateCaches() }
             Mode.LASSO -> lassoPts.clear()
-            Mode.SEL_MOVE, Mode.SEL_SCALE -> { selMatrix.reset(); selTransforming = false; excludeStrokes = emptySet(); excludeImages = emptySet(); invalidateCaches() }
+            Mode.SEL_MOVE, Mode.SEL_SCALE, Mode.SEL_ROTATE -> { selMatrix.reset(); selTransforming = false; excludeStrokes = emptySet(); excludeImages = emptySet(); invalidateCaches() }
             Mode.PAN, Mode.PINCH -> invalidateCaches()
             else -> Unit
         }
@@ -768,7 +830,22 @@ class PageView(context: Context) : View(context) {
         val list = eraseWorking ?: return
         val r = eraserSize
         val onlyHl = eraseOnlyHighlighter && !erasingTemp
-        if (eraserMode == EraserMode.STROKE) {
+        if (eraserMode == EraserMode.SOFT) {
+            var changed = false
+            for (i in list.indices) {
+                val stroke = list[i]
+                if ((!onlyHl || stroke.pen == PenType.HIGHLIGHTER) && Geometry.circleHitsStroke(stroke, px, py, r)) {
+                    val alpha = (Color.alpha(stroke.color) * 0.78f).toInt().coerceAtLeast(20)
+                    val faded = Color.argb(alpha, Color.red(stroke.color), Color.green(stroke.color), Color.blue(stroke.color))
+                    if (faded != stroke.color) { list[i] = Stroke(stroke.pen, faded, stroke.width, stroke.points); changed = true }
+                }
+            }
+            if (changed) {
+                eraseChanged = true
+                page = page.copy(strokes = list.toList())
+                invalidateCaches()
+            }
+        } else if (eraserMode == EraserMode.STROKE) {
             val before = list.size
             list.removeAll { (!onlyHl || it.pen == PenType.HIGHLIGHTER) && Geometry.circleHitsStroke(it, px, py, r) }
             if (list.size != before) {
@@ -833,7 +910,13 @@ class PageView(context: Context) : View(context) {
         var first = true
         fun add(r: RectF) { if (first) { b.set(r); first = false } else b.union(r) }
         sel.strokes.forEach { page.strokes.getOrNull(it)?.let { s -> add(s.bounds) } }
-        page.images.forEach { if (it.id in sel.images) add(it.rect) }
+        page.images.forEach {
+            if (it.id in sel.images) {
+                val rect = RectF(it.rect)
+                if (it.rotation != 0f) Matrix().apply { setRotate(it.rotation, it.centerX, it.centerY) }.mapRect(rect)
+                add(rect)
+            }
+        }
         sel.bounds.set(b)
     }
 
@@ -842,6 +925,10 @@ class PageView(context: Context) : View(context) {
         mode = m
         selStartX = p.x; selStartY = p.y
         selMatrix.reset()
+        selRotation = 0f
+        selStartAngle = if (m == Mode.SEL_ROTATE) {
+            Math.toDegrees(kotlin.math.atan2((p.y - sel.bounds.centerY()).toDouble(), (p.x - sel.bounds.centerX()).toDouble())).toFloat()
+        } else 0f
         selTransforming = true
         excludeStrokes = sel.strokes
         excludeImages = sel.images
@@ -856,12 +943,15 @@ class PageView(context: Context) : View(context) {
         selMatrix.reset()
         if (m.isIdentity) { invalidateCaches(); return }
         val v = FloatArray(9); m.getValues(v)
-        val sc = v[Matrix.MSCALE_X]
+        val sc = hypot(v[Matrix.MSCALE_X], v[Matrix.MSKEW_Y]).coerceIn(0.1f, 10f)
+        val rotation = Math.toDegrees(kotlin.math.atan2(v[Matrix.MSKEW_Y].toDouble(), v[Matrix.MSCALE_X].toDouble())).toFloat()
         val newStrokes = page.strokes.mapIndexed { i, s -> if (i in sel.strokes) s.transformed(m) else s }
         val newImages = page.images.map { im ->
             if (im.id !in sel.images) im else {
-                val pt = floatArrayOf(im.x, im.y); m.mapPoints(pt)
-                im.copy(x = pt[0], y = pt[1], w = im.w * sc, h = im.h * sc)
+                val pt = floatArrayOf(im.centerX, im.centerY); m.mapPoints(pt)
+                val newW = im.w * sc; val newH = im.h * sc
+                im.copy(x = pt[0] - newW / 2f, y = pt[1] - newH / 2f, w = newW, h = newH,
+                    rotation = im.rotation + rotation)
             }
         }
         commit(page.copy(strokes = newStrokes, images = newImages))
@@ -885,8 +975,7 @@ class PageView(context: Context) : View(context) {
         if (e.actionMasked == MotionEvent.ACTION_DOWN) {
             downX = e.x; downY = e.y; downTime = e.eventTime
             maxPointers = 1; gestureMoved = false
-            val edge = width * 0.14f
-            mode = if ((downX < edge || downX > width - edge) && userScale() <= 1.01f) Mode.TURN_PENDING else Mode.FINGER_IDLE
+            mode = if (userScale() <= 1.01f) Mode.TURN_PENDING else Mode.FINGER_IDLE
             postDelayed(longPressRunnable, ViewConfiguration.getLongPressTimeout().toLong())
             return
         }

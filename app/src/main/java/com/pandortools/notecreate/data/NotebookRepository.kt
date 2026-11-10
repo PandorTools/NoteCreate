@@ -70,6 +70,7 @@ class NotebookRepository(context: Context) {
             orientation = spec.orientation,
             customWidthMm = spec.customWidthMm,
             customHeightMm = spec.customHeightMm,
+            groupName = spec.groupName,
             pages = listOf(firstPage),
             pageDates = mapOf(firstPage to System.currentTimeMillis()),
         )
@@ -101,6 +102,7 @@ class NotebookRepository(context: Context) {
             orientation = spec.orientation,
             customWidthMm = spec.customWidthMm,
             customHeightMm = spec.customHeightMm,
+            groupName = spec.groupName,
             updatedAt = System.currentTimeMillis(),
         )
         save(updated)
@@ -293,6 +295,7 @@ class NotebookRepository(context: Context) {
         put("format", nb.format.name); put("orientation", nb.orientation.name)
         nb.customWidthMm?.let { put("customWidthMm", it) }
         nb.customHeightMm?.let { put("customHeightMm", it) }
+        nb.groupName?.let { put("groupName", it) }
         put("pages", JSONArray(nb.pages))
         put("pageDates", JSONObject().apply { nb.pageDates.forEach { (k, v) -> put(k, v) } })
         put("lastPage", nb.lastPage); put("favorite", nb.favorite)
@@ -321,6 +324,7 @@ class NotebookRepository(context: Context) {
             orientation = enumOr(o.optString("orientation"), Orientation.PORTRAIT),
             customWidthMm = if (o.has("customWidthMm")) o.optDouble("customWidthMm").toFloat() else null,
             customHeightMm = if (o.has("customHeightMm")) o.optDouble("customHeightMm").toFloat() else null,
+            groupName = o.optString("groupName").takeIf { it.isNotBlank() },
             pages = pages,
             pageDates = dates,
             lastPage = o.optInt("lastPage", 0).coerceIn(0, max(0, pages.size - 1)),

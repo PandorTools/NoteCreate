@@ -110,6 +110,7 @@ fun LibraryScreen(
     val all by repo.notebooks.collectAsState()
     val scope = rememberCoroutineScope()
     var shelf by rememberSaveable { mutableStateOf(Shelf.ALL) }
+    var groupFilter by rememberSaveable { mutableStateOf<String?>(null) }
     var query by rememberSaveable { mutableStateOf("") }
     var creating by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Notebook?>(null) }
@@ -121,7 +122,9 @@ fun LibraryScreen(
             Shelf.FAVORITES -> it.deletedAt == null && it.favorite
             Shelf.TRASH -> it.deletedAt != null
         }
-    }.filter { query.isBlank() || it.title.contains(query.trim(), ignoreCase = true) }
+    }.filter { groupFilter == null || it.groupName.equals(groupFilter, ignoreCase = true) }
+        .filter { query.isBlank() || it.title.contains(query.trim(), ignoreCase = true) }
+    val groups = all.mapNotNull { it.groupName?.takeIf(String::isNotBlank) }.distinct().sorted()
     val last = all.firstOrNull { it.id == settings.lastNotebookId && it.deletedAt == null }
 
     val compact = LocalConfiguration.current.screenWidthDp < 700
@@ -231,6 +234,15 @@ fun LibraryScreen(
                                     leadingIcon = { Icon(Icons.Outlined.StarBorder, null, Modifier.size(18.dp)) })
                             }
                         }
+                        if (shelf == Shelf.ALL && groups.isNotEmpty()) {
+                            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FilterChip(selected = groupFilter == null, onClick = { groupFilter = null }, label = { Text("Все группы") })
+                                groups.forEach { group ->
+                                    FilterChip(selected = groupFilter.equals(group, ignoreCase = true),
+                                        onClick = { groupFilter = group }, label = { Text(group) })
+                                }
+                            }
+                        }
                     }
                 }
                 if (shelf == Shelf.ALL && last != null && query.isBlank()) {
@@ -272,7 +284,7 @@ fun LibraryScreen(
     }
 
     if (creating) {
-        NotebookSetupDialog(existing = null, defaults = settings, onDismiss = { creating = false }) { spec ->
+        NotebookSetupDialog(existing = null, defaults = settings, onDismiss = { creating = false }, groups = groups) { spec ->
             creating = false
             scope.launch {
                 val nb = repo.create(spec)
@@ -281,7 +293,7 @@ fun LibraryScreen(
         }
     }
     editing?.let { nb ->
-        NotebookSetupDialog(existing = nb, defaults = settings, onDismiss = { editing = null }) { spec ->
+        NotebookSetupDialog(existing = nb, defaults = settings, onDismiss = { editing = null }, groups = groups) { spec ->
             editing = null
             scope.launch { repo.applySpec(nb, spec) }
         }
