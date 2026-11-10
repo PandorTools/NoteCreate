@@ -140,6 +140,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
@@ -386,7 +387,9 @@ fun EditorScreen(notebookId: String, onBack: () -> Unit) {
     // ---------- Содержимое панели инструментов ----------
     val toolsPill: @Composable () -> Unit = {
         Surface(
-            modifier = Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(18.dp)),
+            modifier = Modifier
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(18.dp))
+                .zIndex(2f),
             shape = RoundedCornerShape(18.dp),
             color = MaterialTheme.colorScheme.surfaceContainerHighest,
             contentColor = MaterialTheme.colorScheme.onSurface,
@@ -521,6 +524,7 @@ fun EditorScreen(notebookId: String, onBack: () -> Unit) {
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceContainer)) {
         // ---------- Верхняя панель ----------
         Surface(
+            modifier = Modifier.zIndex(10f),
             color = MaterialTheme.colorScheme.surface,
             contentColor = MaterialTheme.colorScheme.onSurface,
             shadowElevation = 4.dp,
@@ -560,7 +564,7 @@ fun EditorScreen(notebookId: String, onBack: () -> Unit) {
             if (currentNb != null) {
                 AndroidView(
                     factory = { pageView },
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().zIndex(0f),
                     update = { v ->
                         v.notebook = currentNb
                         v.tool = tool
