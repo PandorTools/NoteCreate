@@ -26,6 +26,7 @@ data class SettingsState(
     val theme: ThemeMode = ThemeMode.SYSTEM,
     val favoriteColors: List<Int> = Palette.defaultFavorites,
     val recentColors: List<Int> = emptyList(),
+    val notebookGroups: List<String> = emptyList(),
     val penWidths: Map<PenType, Float> = PenType.entries.associateWith { it.defaultWidth },
     val smoothing: Float = 0.35f,
     val highlighterOpacity: Float = 0.30f,
@@ -69,6 +70,7 @@ class AppSettings(context: Context) {
             theme = e("theme", ThemeMode.entries.toTypedArray(), d.theme),
             favoriteColors = ints("favoriteColors", d.favoriteColors),
             recentColors = ints("recentColors", emptyList()),
+            notebookGroups = prefs.getString("notebookGroups", null)?.split('|')?.map(String::trim)?.filter(String::isNotEmpty)?.distinct().orEmpty(),
             penWidths = PenType.entries.associateWith { prefs.getFloat("width_" + it.name, it.defaultWidth) },
             smoothing = prefs.getFloat("smoothing", d.smoothing),
             highlighterOpacity = prefs.getFloat("highlighterOpacity", d.highlighterOpacity).coerceIn(0.08f, 0.8f),
@@ -91,6 +93,7 @@ class AppSettings(context: Context) {
         putString("theme", s.theme.name)
         putString("favoriteColors", s.favoriteColors.joinToString(","))
         putString("recentColors", s.recentColors.joinToString(","))
+        putString("notebookGroups", s.notebookGroups.joinToString("|"))
         s.penWidths.forEach { (k, v) -> putFloat("width_" + k.name, v) }
         putFloat("smoothing", s.smoothing)
         putFloat("highlighterOpacity", s.highlighterOpacity)

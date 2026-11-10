@@ -8,6 +8,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,11 +32,13 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Book
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.Restore
@@ -49,6 +52,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
@@ -64,12 +68,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
@@ -113,6 +124,8 @@ fun LibraryScreen(
     var groupFilter by rememberSaveable { mutableStateOf<String?>(null) }
     var query by rememberSaveable { mutableStateOf("") }
     var creating by remember { mutableStateOf(false) }
+    var creatingGroup by remember { mutableStateOf(false) }
+    var newGroupName by remember { mutableStateOf("") }
     var editing by remember { mutableStateOf<Notebook?>(null) }
     var confirmDelete by remember { mutableStateOf<Notebook?>(null) }
 
@@ -124,7 +137,9 @@ fun LibraryScreen(
         }
     }.filter { groupFilter == null || it.groupName.equals(groupFilter, ignoreCase = true) }
         .filter { query.isBlank() || it.title.contains(query.trim(), ignoreCase = true) }
-    val groups = all.mapNotNull { it.groupName?.takeIf(String::isNotBlank) }.distinct().sorted()
+    val groups = (settings.notebookGroups + all.mapNotNull { it.groupName?.takeIf(String::isNotBlank) }).distinct().sorted()
+    val groupBounds = remember { mutableStateMapOf<String, Rect>() }
+    var draggingNotebook by remember { mutableStateOf<String?>(null) }
     val last = all.firstOrNull { it.id == settings.lastNotebookId && it.deletedAt == null }
 
     val compact = LocalConfiguration.current.screenWidthDp < 700
@@ -234,14 +249,21 @@ fun LibraryScreen(
                                     leadingIcon = { Icon(Icons.Outlined.StarBorder, null, Modifier.size(18.dp)) })
                             }
                         }
-                        if (shelf == Shelf.ALL && groups.isNotEmpty()) {
-                            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (shelf == Shelf.ALL) {
+                            Row(Modifier.horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 FilterChip(selected = groupFilter == null, onClick = { groupFilter = null }, label = { Text("Все группы") })
                                 groups.forEach { group ->
                                     FilterChip(selected = groupFilter.equals(group, ignoreCase = true),
-                                        onClick = { groupFilter = group }, label = { Text(group) })
+                                        onClick = { groupFilter = group }, label = { Text(group) },
+                                        modifier = Modifier.onGloballyPositioned { groupBounds[group] = it.boundsInRoot() })
                                 }
+                                FilterChip(selected = false, onClick = { newGroupName = ""; creatingGroup = true },
+                                    label = { Text("+ Категория") })
                             }
+                            if (groups.isNotEmpty()) Text(
+                                if (draggingNotebook != null) "Отпусти тетрадь на категории, чтобы переместить" else "Чтобы разложить тетради, удерживай обложку и перетащи её на категорию",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
@@ -277,10 +299,41 @@ fun LibraryScreen(
                         onDelete = { scope.launch { repo.moveToTrash(nb) } },
                         onRestore = { scope.launch { repo.restore(nb) } },
                         onDeleteForever = { confirmDelete = nb },
+                        onDragStarted = { draggingNotebook = it.id },
+                        onDragEnded = { dragged, point ->
+                            val target = groups.firstOrNull { groupBounds[it]?.contains(point) == true }
+                            if (target != null) scope.launch { repo.save(dragged.copy(groupName = target)) }
+                            draggingNotebook = null
+                        },
                     )
                 }
             }
         }
+    }
+
+    if (creatingGroup) {
+        AlertDialog(
+            onDismissRequest = { creatingGroup = false },
+            title = { Text("Новая категория") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Например: Учёба, Работа или Личные записи")
+                    OutlinedTextField(value = newGroupName, onValueChange = { newGroupName = it },
+                        label = { Text("Название категории") }, singleLine = true)
+                }
+            },
+            confirmButton = {
+                TextButton(enabled = newGroupName.isNotBlank(), onClick = {
+                    val name = newGroupName.trim()
+                    if (name.isNotEmpty() && groups.none { it.equals(name, ignoreCase = true) }) {
+                        AppGraph.settings.update { it.copy(notebookGroups = (it.notebookGroups + name).distinct()) }
+                    }
+                    groupFilter = null
+                    creatingGroup = false
+                }) { Text("Создать") }
+            },
+            dismissButton = { TextButton(onClick = { creatingGroup = false }) { Text("Отмена") } },
+        )
     }
 
     if (creating) {
@@ -343,6 +396,8 @@ private fun NotebookTile(
     onDelete: () -> Unit,
     onRestore: () -> Unit,
     onDeleteForever: () -> Unit,
+    onDragStarted: (Notebook) -> Unit,
+    onDragEnded: (Notebook, Offset) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val rotation = remember { Animatable(0f) }
@@ -350,6 +405,8 @@ private fun NotebookTile(
     var menu by remember { mutableStateOf(false) }
     val density = LocalDensity.current.density
     val dateFmt = remember { SimpleDateFormat("d MMM yyyy", Locale("ru")) }
+    var tileCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    var lastDragPoint by remember { mutableStateOf(Offset.Zero) }
 
     Column {
         Box(
@@ -357,6 +414,21 @@ private fun NotebookTile(
                 .fillMaxWidth()
                 .aspectRatio(nb.aspect)
                 .graphicsLayer { scaleX = lift.value; scaleY = lift.value }
+                .onGloballyPositioned { tileCoordinates = it }
+                .pointerInput(nb.id) {
+                    detectDragGesturesAfterLongPress(
+                        onDragStart = { local ->
+                            onDragStarted(nb)
+                            tileCoordinates?.localToRoot(local)?.let { lastDragPoint = it }
+                        },
+                        onDrag = { change, _ ->
+                            change.consume()
+                            tileCoordinates?.localToRoot(change.position)?.let { lastDragPoint = it }
+                        },
+                        onDragEnd = { onDragEnded(nb, lastDragPoint) },
+                        onDragCancel = { onDragEnded(nb, Offset.Unspecified) },
+                    )
+                }
                 .combinedClickable(
                     onClick = {
                         if (inTrash) { menu = true; return@combinedClickable }
@@ -391,6 +463,10 @@ private fun NotebookTile(
             if (nb.favorite) {
                 Icon(Icons.Filled.Star, null, tint = MaterialTheme.colorScheme.secondary,
                     modifier = Modifier.align(Alignment.TopEnd).padding(8.dp).size(20.dp))
+            }
+            IconButton(onClick = { menu = true }, modifier = Modifier.align(Alignment.TopStart)
+                .padding(4.dp).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.86f), CircleShape)) {
+                Icon(Icons.Filled.MoreVert, "Действия с тетрадью")
             }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 if (inTrash) {

@@ -104,7 +104,9 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.pandortools.notecreate.data.AppGraph
+import com.pandortools.notecreate.data.AppSettings
 import com.pandortools.notecreate.data.PenType
+import com.pandortools.notecreate.data.SettingsState
 import com.pandortools.notecreate.ink.EditorTool
 import com.pandortools.notecreate.ink.EraserMode
 import com.pandortools.notecreate.ink.PageView
@@ -307,13 +309,29 @@ fun EditorScreen(notebookId: String, onBack: () -> Unit) {
                     }
                     Bar()
                     PenType.entries.forEach { p ->
-                        ToolButton(
-                            icon = penIcon(p), label = p.title,
-                            selected = tool == EditorTool.PEN && pen == p,
-                        ) { tool = EditorTool.PEN; pen = p; showWidth = true }
+                        Box {
+                            ToolButton(icon = penIcon(p), label = p.title,
+                                selected = tool == EditorTool.PEN && pen == p) { tool = EditorTool.PEN; pen = p; showWidth = true }
+                            ToolSettingsMenu(showWidth && tool == EditorTool.PEN && pen == p, { showWidth = false },
+                                EditorTool.PEN, p, color, settings, settingsStore,
+                                eraserMode, { eraserMode = it }, eraserSize, { eraserSize = it },
+                                eraseOnlyHighlighter, { eraseOnlyHighlighter = it })
+                        }
                     }
-                    ToolButton(ToolIcons.Eraser, "Ластик", tool == EditorTool.ERASER) { tool = EditorTool.ERASER; showWidth = true }
-                    ToolButton(ToolIcons.Lasso, "Лассо", tool == EditorTool.LASSO) { tool = EditorTool.LASSO; showWidth = true }
+                    Box {
+                        ToolButton(ToolIcons.Eraser, "Ластик", tool == EditorTool.ERASER) { tool = EditorTool.ERASER; showWidth = true }
+                        ToolSettingsMenu(showWidth && tool == EditorTool.ERASER, { showWidth = false },
+                            EditorTool.ERASER, pen, color, settings, settingsStore,
+                            eraserMode, { eraserMode = it }, eraserSize, { eraserSize = it },
+                            eraseOnlyHighlighter, { eraseOnlyHighlighter = it })
+                    }
+                    Box {
+                        ToolButton(ToolIcons.Lasso, "Лассо", tool == EditorTool.LASSO) { tool = EditorTool.LASSO; showWidth = true }
+                        ToolSettingsMenu(showWidth && tool == EditorTool.LASSO, { showWidth = false },
+                            EditorTool.LASSO, pen, color, settings, settingsStore,
+                            eraserMode, { eraserMode = it }, eraserSize, { eraserSize = it },
+                            eraseOnlyHighlighter, { eraseOnlyHighlighter = it })
+                    }
                     Bar()
                     settings.favoriteColors.take(6).forEachIndexed { i, c ->
                         Box(
@@ -334,54 +352,7 @@ fun EditorScreen(notebookId: String, onBack: () -> Unit) {
                         )
                     }
                     IconButton(onClick = { pickerSlot = -1; showPicker = true }) { Icon(Icons.Filled.Palette, "Палитра") }
-                    Box {
-                        IconButton(onClick = { showWidth = true }) { Icon(Icons.Filled.LineWeight, "Толщина") }
-                        DropdownMenu(expanded = showWidth, onDismissRequest = { showWidth = false }) {
-                            Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp).width(280.dp)) {
-                                if (tool == EditorTool.ERASER) {
-                                    Text("Ластик · стирает только под кончиком", style = MaterialTheme.typography.titleSmall)
-                                    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        FilterChip(eraserMode == EraserMode.AREA, { eraserMode = EraserMode.AREA }, { Text("Частично") })
-                                        FilterChip(eraserMode == EraserMode.SOFT, { eraserMode = EraserMode.SOFT }, { Text("Мягкий") })
-                                        FilterChip(eraserMode == EraserMode.STROKE, { eraserMode = EraserMode.STROKE }, { Text("Весь штрих") })
-                                    }
-                                    Text(when (eraserMode) {
-                                        EraserMode.AREA -> "Удаляет только часть штриха под ластиком."
-                                        EraserMode.SOFT -> "Постепенно делает линию светлее, сохраняя её."
-                                        EraserMode.STROKE -> "Удаляет целый штрих при касании."
-                                    }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Text("Размер: ${eraserSize.roundToInt()}", style = MaterialTheme.typography.bodySmall)
-                                    Slider(eraserSize, { eraserSize = it }, valueRange = 2f..40f)
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text("Только маркер", Modifier.weight(1f))
-                                        Switch(eraseOnlyHighlighter, { eraseOnlyHighlighter = it })
-                                    }
-                                } else if (tool == EditorTool.LASSO) {
-                                    Text("Лассо", style = MaterialTheme.typography.titleSmall)
-                                    Text("Обведи замкнутым контуром штрихи или изображение. Перетащи выделение, чтобы переместить; потяни нижний маркер для размера, верхний — для поворота.",
-                                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                } else {
-                                    val w = settings.penWidths[pen] ?: pen.defaultWidth
-                                    Text("${pen.title}: толщина ${"%.1f".format(w)}", style = MaterialTheme.typography.titleSmall)
-                                    val range = if (pen == PenType.HIGHLIGHTER) 4f..30f else 0.4f..12f
-                                    Slider(w, { v -> settingsStore.update { s -> s.copy(penWidths = s.penWidths + (pen to v)) } }, valueRange = range)
-                                    if (pen == PenType.HIGHLIGHTER) {
-                                        Text("Непрозрачность: ${(settings.highlighterOpacity * 100).roundToInt()}%", style = MaterialTheme.typography.bodySmall)
-                                        Slider(settings.highlighterOpacity, { v -> settingsStore.update { it.copy(highlighterOpacity = v) } }, valueRange = 0.08f..0.8f)
-                                    }
-                                    Box(Modifier.height(36.dp).width(260.dp), contentAlignment = Alignment.Center) {
-                                        Box(
-                                            Modifier.width(220.dp).height((w * 1.4f).coerceIn(1f, 36f).dp)
-                                                .clip(RoundedCornerShape(50))
-                                                .background(Color(color).copy(alpha = if (pen == PenType.HIGHLIGHTER) 0.4f else 1f))
-                                        )
-                                    }
-                                    Text("Сглаживание линии: ${(settings.smoothing * 100).roundToInt()}%", style = MaterialTheme.typography.bodySmall)
-                                    Slider(settings.smoothing, { v -> settingsStore.update { it.copy(smoothing = v) } }, valueRange = 0f..0.9f)
-                                }
-                            }
-                        }
-                    }
+                    IconButton(onClick = { showWidth = true }) { Icon(Icons.Filled.LineWeight, "Настройки выбранного инструмента") }
                     Bar()
                     Box {
                         IconButton(onClick = { showImageMenu = true }) { Icon(Icons.Filled.Image, "Картинка") }
@@ -561,6 +532,70 @@ fun EditorScreen(notebookId: String, onBack: () -> Unit) {
         NotebookSetupDialog(existing = currentNb, defaults = settings, onDismiss = { showNotebookSettings = false }) { spec ->
             showNotebookSettings = false
             vm.applySpec(spec)
+        }
+    }
+}
+
+@Composable
+private fun ToolSettingsMenu(
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+    selectedTool: EditorTool,
+    selectedPen: PenType,
+    color: Int,
+    settings: SettingsState,
+    settingsStore: AppSettings,
+    eraserMode: EraserMode,
+    onEraserMode: (EraserMode) -> Unit,
+    eraserSize: Float,
+    onEraserSize: (Float) -> Unit,
+    eraseOnlyHighlighter: Boolean,
+    onEraseOnlyHighlighter: (Boolean) -> Unit,
+) {
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp).width(280.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            when (selectedTool) {
+                EditorTool.ERASER -> {
+                    Text("Настройки ластика", style = MaterialTheme.typography.titleSmall)
+                    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(eraserMode == EraserMode.AREA, { onEraserMode(EraserMode.AREA) }, { Text("Частично") })
+                        FilterChip(eraserMode == EraserMode.SOFT, { onEraserMode(EraserMode.SOFT) }, { Text("Мягкий") })
+                        FilterChip(eraserMode == EraserMode.STROKE, { onEraserMode(EraserMode.STROKE) }, { Text("Весь штрих") })
+                    }
+                    Text(when (eraserMode) {
+                        EraserMode.AREA -> "Удаляет участок линии под кончиком."
+                        EraserMode.SOFT -> "Осветляет линию, сохраняя её на листе."
+                        EraserMode.STROKE -> "Удаляет весь штрих при касании."
+                    }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Размер: ${eraserSize.roundToInt()}", style = MaterialTheme.typography.bodySmall)
+                    Slider(eraserSize, onEraserSize, valueRange = 2f..40f)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Стирать только маркер", Modifier.weight(1f))
+                        Switch(eraseOnlyHighlighter, onEraseOnlyHighlighter)
+                    }
+                }
+                EditorTool.LASSO -> {
+                    Text("Настройки выделения", style = MaterialTheme.typography.titleSmall)
+                    Text("Обведи контуром нужные штрихи или картинку. Перетаскивай выделение для перемещения, нижний маркер — для размера, верхний — для поворота.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                EditorTool.PEN -> {
+                    val width = settings.penWidths[selectedPen] ?: selectedPen.defaultWidth
+                    Text("${selectedPen.title} · толщина ${"%.1f".format(width)}", style = MaterialTheme.typography.titleSmall)
+                    val range = if (selectedPen == PenType.HIGHLIGHTER) 4f..30f else 0.4f..12f
+                    Slider(width, { v -> settingsStore.update { it.copy(penWidths = it.penWidths + (selectedPen to v)) } }, valueRange = range)
+                    if (selectedPen == PenType.HIGHLIGHTER) {
+                        Text("Непрозрачность: ${(settings.highlighterOpacity * 100).roundToInt()}%", style = MaterialTheme.typography.bodySmall)
+                        Slider(settings.highlighterOpacity, { v -> settingsStore.update { it.copy(highlighterOpacity = v) } }, valueRange = 0.08f..0.8f)
+                    }
+                    Box(Modifier.height(36.dp).width(260.dp), contentAlignment = Alignment.Center) {
+                        Box(Modifier.width(220.dp).height((width * 1.4f).coerceIn(1f, 36f).dp)
+                            .clip(RoundedCornerShape(50)).background(Color(color).copy(alpha = if (selectedPen == PenType.HIGHLIGHTER) 0.4f else 1f)))
+                    }
+                    Text("Сглаживание линии: ${(settings.smoothing * 100).roundToInt()}%", style = MaterialTheme.typography.bodySmall)
+                    Slider(settings.smoothing, { v -> settingsStore.update { it.copy(smoothing = v) } }, valueRange = 0f..0.9f)
+                }
+            }
         }
     }
 }

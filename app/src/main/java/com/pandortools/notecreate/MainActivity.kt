@@ -74,9 +74,15 @@ class MainActivity : ComponentActivity() {
                             exitTransition = { fadeOut(tween(180)) },
                         ) {
                             composable("onboarding") {
-                                OnboardingScreen(onDone = { nb ->
-                                    nav.navigate("editor/${nb.id}") { popUpTo("onboarding") { inclusive = true } }
-                                })
+                                OnboardingScreen(
+                                    onSkip = {
+                                        AppGraph.settings.update { it.copy(onboardingDone = true) }
+                                        nav.navigate("library") { popUpTo("onboarding") { inclusive = true } }
+                                    },
+                                    onDone = { nb ->
+                                        nav.navigate("editor/${nb.id}") { popUpTo("onboarding") { inclusive = true } }
+                                    },
+                                )
                             }
                             composable("library") {
                                 LibraryScreen(

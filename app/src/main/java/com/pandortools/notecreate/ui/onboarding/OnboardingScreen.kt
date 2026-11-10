@@ -54,7 +54,7 @@ import kotlinx.coroutines.launch
 
 /** Первый запуск: пользователь сам выбирает лист, ориентацию, бумагу и руку. */
 @Composable
-fun OnboardingScreen(onDone: (Notebook) -> Unit) {
+fun OnboardingScreen(onDone: (Notebook) -> Unit, onSkip: () -> Unit) {
     val settings = AppGraph.settings
     val s0 = settings.value
     var format by remember { mutableStateOf(s0.defaultFormat) }
@@ -132,7 +132,9 @@ fun OnboardingScreen(onDone: (Notebook) -> Unit) {
                 FilterChip(leftHanded, { leftHanded = true }, { Text("Левша") })
             }
             Spacer(Modifier.height(8.dp))
-            Button(
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+              androidx.compose.material3.TextButton(onClick = onSkip, modifier = Modifier.weight(1f)) { Text("Пропустить") }
+              Button(
                 onClick = {
                     settings.update {
                         it.copy(
@@ -154,8 +156,9 @@ fun OnboardingScreen(onDone: (Notebook) -> Unit) {
                         onDone(nb)
                     }
                 },
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-            ) { Text("Начать писать") }
+                modifier = Modifier.weight(2f).height(52.dp),
+              ) { Text("Начать писать") }
+            }
         }
     }
 }
