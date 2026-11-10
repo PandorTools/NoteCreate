@@ -139,6 +139,7 @@ import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
@@ -384,7 +385,13 @@ fun EditorScreen(notebookId: String, onBack: () -> Unit) {
 
     // ---------- Содержимое панели инструментов ----------
     val toolsPill: @Composable () -> Unit = {
-        Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+        Surface(
+            modifier = Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(18.dp)),
+            shape = RoundedCornerShape(18.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            tonalElevation = 2.dp,
+        ) {
             Row(Modifier.padding(horizontal = 6.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 PenType.entries.forEach { p ->
                     Box {
@@ -418,13 +425,11 @@ fun EditorScreen(notebookId: String, onBack: () -> Unit) {
                         ToolPopup(onDismiss = { panel = ToolPanel.NONE }) { LassoOptions() }
                     }
                 }
-                IconButton(onClick = { rulerVisible = !rulerVisible }) {
-                    Icon(Icons.Outlined.Straighten, if (rulerVisible) "Скрыть линейку" else "Показать линейку",
-                        tint = if (rulerVisible) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
-                }
+                ToolButton(Icons.Outlined.Straighten, "Линейка", rulerVisible,
+                    if (rulerVisible) MaterialTheme.colorScheme.primary else null) { rulerVisible = !rulerVisible }
                 PillDivider()
                 Box {
-                    ToolButton(Icons.Outlined.Image, "Вставить картинку", panel == ToolPanel.IMAGE) {
+                    ToolButton(Icons.Outlined.Image, "Фото", panel == ToolPanel.IMAGE) {
                         panel = if (panel == ToolPanel.IMAGE) ToolPanel.NONE else ToolPanel.IMAGE
                     }
                     DropdownMenu(expanded = panel == ToolPanel.IMAGE, onDismissRequest = { panel = ToolPanel.NONE }) {
@@ -515,13 +520,17 @@ fun EditorScreen(notebookId: String, onBack: () -> Unit) {
 
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceContainer)) {
         // ---------- Верхняя панель ----------
-        Surface(color = MaterialTheme.colorScheme.surface, shadowElevation = 3.dp) {
+        Surface(
+            color = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            shadowElevation = 4.dp,
+        ) {
             BoxWithConstraints(Modifier.fillMaxWidth().statusBarsPadding()) {
                 // At medium tablet widths the toolbar used to compete with the title and actions
                 // in one Row, pushing its controls outside the visible window. Keep it on its
                 // own horizontally scrollable row until there is room for all three sections.
                 if (maxWidth >= 1200.dp) {
-                    Row(Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().height(72.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Row(Modifier.width(250.dp), verticalAlignment = Alignment.CenterVertically) {
                             IconButton(onClick = { vm.flush(); onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "К библиотеке") }
                             titleBlock(Modifier.weight(1f))
@@ -740,23 +749,26 @@ private fun ToolButton(
     onClick: () -> Unit,
 ) {
     val bg = if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
-    val fg = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-    Box(
+    val fg = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface
+    Column(
         Modifier
             .padding(horizontal = 2.dp)
-            .size(44.dp)
+            .width(60.dp)
+            .height(58.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(bg)
+            .background(if (selected) bg else MaterialTheme.colorScheme.surface)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
             .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
     ) {
-        Icon(icon, label, tint = fg, modifier = Modifier.size(22.dp).offset(y = if (indicator != null) (-3).dp else 0.dp))
+        Icon(icon, label, tint = fg, modifier = Modifier.size(19.dp))
+        Text(label, color = fg, style = MaterialTheme.typography.labelSmall,
+            fontSize = 9.sp, lineHeight = 10.sp, maxLines = 1)
         if (indicator != null) {
             Box(
                 Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 6.dp)
-                    .size(width = 16.dp, height = 4.dp)
+                    .size(width = 18.dp, height = 3.dp)
                     .clip(RoundedCornerShape(2.dp))
                     .background(indicator),
             )

@@ -12,7 +12,7 @@ android {
         applicationId = "com.pandortools.notecreate"
         minSdk = 29
         targetSdk = 35
-        versionCode = 6
+        versionCode = 7
         versionName = "0.1.3"
     }
 
