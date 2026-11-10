@@ -69,4 +69,5 @@ jobs:
         with:
           files: out/*.apk
           body_path: out/release-notes.md
+          overwrite_files: true
           make_latest: true

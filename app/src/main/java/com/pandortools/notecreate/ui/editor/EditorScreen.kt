@@ -517,14 +517,19 @@ fun EditorScreen(notebookId: String, onBack: () -> Unit) {
         // ---------- Верхняя панель ----------
         Surface(color = MaterialTheme.colorScheme.surface, shadowElevation = 3.dp) {
             BoxWithConstraints(Modifier.fillMaxWidth().statusBarsPadding()) {
-                if (maxWidth >= 900.dp) {
+                // At medium tablet widths the toolbar used to compete with the title and actions
+                // in one Row, pushing its controls outside the visible window. Keep it on its
+                // own horizontally scrollable row until there is room for all three sections.
+                if (maxWidth >= 1200.dp) {
                     Row(Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.width(250.dp), verticalAlignment = Alignment.CenterVertically) {
                             IconButton(onClick = { vm.flush(); onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "К библиотеке") }
                             titleBlock(Modifier.weight(1f))
                         }
-                        toolsPill()
-                        Row(Modifier.weight(1f), horizontalArrangement = Arrangement.End) { actions() }
+                        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                            Box(Modifier.horizontalScroll(rememberScrollState())) { toolsPill() }
+                        }
+                        actions()
                     }
                 } else {
                     Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {

@@ -22,6 +22,65 @@ object ShapeRecognizer {
         val width = right - left; val height = bottom - top
         val diagonal = hypot(width, height).coerceAtLeast(0.001f)
 
+        // Closed polygonal gestures: fit four corners for rectangles/squares and
+        // three corners for triangles. The user can draw it roughly; the result
+        // is normalized to clean, straight edges after the hold delay.
+        if (stroke.size >= 8 && hypot(firstX - lastX, firstY - lastY) < diagonal * 0.38f &&
+            width > 10f && height > 10f) {
+            val corners = listOf(
+                floatArrayOf(left, top), floatArrayOf(right, top),
+                floatArrayOf(right, bottom), floatArrayOf(left, bottom),
+            )
+            val cornerErrors = corners.map { corner ->
+                (0 until stroke.size).minOf { i -> hypot(stroke.x(i) - corner[0], stroke.y(i) - corner[1]) }
+            }
+            val rectangleError = cornerErrors.maxOrNull()!! / diagonal
+            val aspect = max(width, height) / minOf(width, height)
+            if (rectangleError < 0.13f && aspect < 3.2f) {
+                val pts = floatArrayOf(
+                    left, top, stroke.pressure(0), 0f,
+                    right, top, stroke.pressure(stroke.size / 4), 0f,
+                    right, bottom, stroke.pressure(stroke.size / 2), 0f,
+                    left, bottom, stroke.pressure(stroke.size * 3 / 4), 0f,
+                    left, top, stroke.pressure(stroke.size - 1), 0f,
+                )
+                return Stroke(stroke.pen, stroke.color, stroke.width, pts)
+            }
+
+            // For a triangle, locate the three most separated clusters along
+            // the gesture. Require an actually triangular path to avoid turning
+            // an irregular oval into a triangle.
+            val sampleCount = stroke.size.coerceAtMost(24)
+            val samples = (0 until sampleCount).map { j ->
+                val i = j * (stroke.size - 1) / (sampleCount - 1)
+                floatArrayOf(stroke.x(i), stroke.y(i))
+            }
+            var best: List<FloatArray>? = null
+            var bestError = Float.MAX_VALUE
+            for (a in samples.indices) for (b in a + 1 until samples.size) for (c in b + 1 until samples.size) {
+                val vertices = listOf(samples[a], samples[b], samples[c])
+                val error = samples.sumOf { p ->
+                    val a0 = vertices[0]; val a1 = vertices[1]; val a2 = vertices[2]
+                    minOf(
+                        pointSegmentDistance(p[0], p[1], a0[0], a0[1], a1[0], a1[1]),
+                        pointSegmentDistance(p[0], p[1], a1[0], a1[1], a2[0], a2[1]),
+                        pointSegmentDistance(p[0], p[1], a2[0], a2[1], a0[0], a0[1]),
+                    ).toDouble()
+                }.toFloat() / samples.size / diagonal
+                if (error < bestError) { bestError = error; best = vertices }
+            }
+            if (bestError < 0.045f) {
+                val vertices = best!!
+                val ordered = vertices.sortedBy { kotlin.math.atan2((it[1] - (top + bottom) / 2f).toDouble(), (it[0] - (left + right) / 2f).toDouble()) }
+                val pts = FloatArray(4 * Stroke.STRIDE)
+                for (i in 0..3) {
+                    val v = ordered[i % 3]; val o = i * Stroke.STRIDE
+                    pts[o] = v[0]; pts[o + 1] = v[1]; pts[o + 2] = stroke.pressure(i * (stroke.size - 1) / 3); pts[o + 3] = 0f
+                }
+                return Stroke(stroke.pen, stroke.color, stroke.width, pts)
+            }
+        }
+
         // Closed, fairly even loop: approximate an ellipse using its observed bounds.
         if (stroke.size >= 12 && hypot(firstX - lastX, firstY - lastY) < diagonal * 0.32f &&
             width > 8f && height > 8f && max(width, height) / minOf(width, height) < 2.4f) {
@@ -88,5 +147,13 @@ object ShapeRecognizer {
             }
         }
         return null
+    }
+
+    private fun pointSegmentDistance(px: Float, py: Float, ax: Float, ay: Float, bx: Float, by: Float): Float {
+        val dx = bx - ax; val dy = by - ay
+        val len2 = dx * dx + dy * dy
+        if (len2 <= 0.0001f) return hypot(px - ax, py - ay)
+        val t = (((px - ax) * dx + (py - ay) * dy) / len2).coerceIn(0f, 1f)
+        return hypot(px - (ax + t * dx), py - (ay + t * dy))
     }
 }
