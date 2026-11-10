@@ -11,6 +11,9 @@ enum class PenType(val title: String, val defaultWidth: Float) {
     FOUNTAIN("Перо", 2.2f),
     PENCIL("Карандаш", 1.8f),
     HIGHLIGHTER("Маркер", 10f),
+    WATERCOLOR("Акварель", 5f),
+    INK("Тушь", 2.5f),
+    TEXTURED("Кисть с текстурой", 4f),
 }
 
 /**
@@ -22,6 +25,8 @@ class Stroke(
     val color: Int,
     val width: Float,
     val points: FloatArray,
+    val layerId: String = PageLayers.DRAWING,
+    val createdAtMillis: Long = System.currentTimeMillis(),
 ) {
     val size: Int get() = points.size / STRIDE
 
@@ -47,10 +52,12 @@ class Stroke(
     fun maxWidth(): Float = when (pen) {
         PenType.HIGHLIGHTER -> width
         PenType.PENCIL -> width * 3f
+        PenType.WATERCOLOR -> width * 2.5f
+        PenType.TEXTURED -> width * 3f
         else -> width * 1.5f
     }
 
-    fun recolored(newColor: Int) = Stroke(pen, newColor, width, points)
+    fun recolored(newColor: Int) = Stroke(pen, newColor, width, points, layerId, createdAtMillis)
 
     fun transformed(m: Matrix): Stroke {
         val n = size
@@ -61,11 +68,11 @@ class Stroke(
         for (i in 0 until n) { out[i * STRIDE] = xy[i * 2]; out[i * STRIDE + 1] = xy[i * 2 + 1] }
         val v = FloatArray(9); m.getValues(v)
         val scale = sqrt(max(0.0001f, kotlin.math.abs(v[Matrix.MSCALE_X] * v[Matrix.MSCALE_Y] - v[Matrix.MSKEW_X] * v[Matrix.MSKEW_Y])))
-        return Stroke(pen, color, width * scale, out)
+        return Stroke(pen, color, width * scale, out, layerId, createdAtMillis)
     }
 
     /** Часть штриха с точками [from, to). */
-    fun slice(from: Int, to: Int) = Stroke(pen, color, width, points.copyOfRange(from * STRIDE, to * STRIDE))
+    fun slice(from: Int, to: Int) = Stroke(pen, color, width, points.copyOfRange(from * STRIDE, to * STRIDE), layerId, createdAtMillis)
 
     companion object { const val STRIDE = 4 }
 }
@@ -79,18 +86,52 @@ data class ImageItem(
     val h: Float,
     val rotation: Float = 0f,
     val locked: Boolean = false,
+    val layerId: String = PageLayers.NOTES,
 ) {
     val rect: RectF get() = RectF(x, y, x + w, y + h)
     val centerX get() = x + w / 2f
     val centerY get() = y + h / 2f
 }
 
+data class TextBlock(
+    val id: String,
+    val text: String,
+    val x: Float,
+    val y: Float,
+    val fontSize: Float = 16f,
+    val color: Int = android.graphics.Color.BLACK,
+    val fontFamily: String = "sans",
+    val layerId: String = PageLayers.NOTES,
+)
+
+data class PageLayer(
+    val id: String,
+    val name: String,
+    val visible: Boolean = true,
+    val locked: Boolean = false,
+)
+
+object PageLayers {
+    const val BACKGROUND = "background"
+    const val DRAWING = "drawing"
+    const val NOTES = "notes"
+    val defaults = listOf(
+        PageLayer(BACKGROUND, "Фон"),
+        PageLayer(DRAWING, "Рисунок"),
+        PageLayer(NOTES, "Заметки"),
+    )
+}
+
 /** Содержимое одной страницы. Неизменяемое — каждая правка создаёт новый объект (удобно для отмены). */
 data class PageData(
     val strokes: List<Stroke> = emptyList(),
     val images: List<ImageItem> = emptyList(),
+    val textBlocks: List<TextBlock> = emptyList(),
+    val layers: List<PageLayer> = PageLayers.defaults,
+    val template: PageTemplate = PageTemplate.NONE,
 ) {
-    val isEmpty get() = strokes.isEmpty() && images.isEmpty()
+    val isEmpty get() = strokes.isEmpty() && images.isEmpty() && textBlocks.isEmpty()
+    fun layer(id: String) = layers.firstOrNull { it.id == id } ?: PageLayers.defaults.firstOrNull { it.id == id }
 }
 
 enum class PaperType(val title: String) {
@@ -121,6 +162,7 @@ enum class CoverMaterial(val title: String) {
 }
 
 enum class NotebookTemplate(val title: String) { NOTEBOOK("Тетрадь"), DIARY("Дневник") }
+enum class PageTemplate(val title: String) { NONE("Обычная страница"), HABITS("Трекер привычек"), WEEK("Планер на неделю"), TODO("Список дел"), DAY_REVIEW("Итоги дня") }
 
 const val MM_TO_PT = 72f / 25.4f
 
@@ -148,6 +190,8 @@ data class Notebook(
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
     val deletedAt: Long? = null,
+    /** Ribbon bookmarks stored as page ids. */
+    val bookmarks: Set<String> = emptySet(),
 ) {
     val pageWidth: Float
         get() = (if (orientation == Orientation.PORTRAIT) (customWidthMm ?: format.widthMm) else (customHeightMm ?: format.heightMm)) * MM_TO_PT

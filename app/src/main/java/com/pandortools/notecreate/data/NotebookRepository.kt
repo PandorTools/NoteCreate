@@ -4,6 +4,13 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.ImageDecoder
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Matrix
+import android.graphics.Paint
+import android.graphics.Rect
+import android.graphics.pdf.PdfRenderer
+import android.os.ParcelFileDescriptor
 import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,7 +28,11 @@ import java.io.DataOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.util.zip.ZipEntry
+import java.util.zip.ZipInputStream
+import java.util.zip.ZipOutputStream
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -34,6 +45,7 @@ class NotebookRepository(context: Context) {
     private val appContext = context.applicationContext
     private val root = File(appContext.filesDir, "notebooks").apply { mkdirs() }
     private val mutex = Mutex()
+    private val handwritingCache = ConcurrentHashMap<String, String>()
 
     private val _notebooks = MutableStateFlow<List<Notebook>>(emptyList())
     val notebooks: StateFlow<List<Notebook>> = _notebooks.asStateFlow()
@@ -117,6 +129,56 @@ class NotebookRepository(context: Context) {
         _notebooks.value = _notebooks.value.filter { it.id != nb.id }
     }
 
+    /** Self-contained .ncbook archive: metadata, vector pages and attached images. */
+    suspend fun exportNotebook(nb: Notebook, uri: Uri): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            appContext.contentResolver.openOutputStream(uri, "wt")!!.use { raw ->
+                ZipOutputStream(BufferedOutputStream(raw)).use { zip ->
+                    val dir = File(root, nb.id)
+                    dir.walkTopDown().filter { it.isFile }.forEach { file ->
+                        val name = file.relativeTo(dir).invariantSeparatorsPath
+                        zip.putNextEntry(ZipEntry(name))
+                        file.inputStream().use { it.copyTo(zip) }
+                        zip.closeEntry()
+                    }
+                }
+            }
+        }.isSuccess
+    }
+
+    /** Restores an archive as a new notebook, leaving any existing copy untouched. */
+    suspend fun importNotebook(uri: Uri): Notebook? = withContext(Dispatchers.IO) {
+        runCatching {
+            val staging = File(appContext.cacheDir, "restore-${UUID.randomUUID()}").apply { mkdirs() }
+            try {
+                appContext.contentResolver.openInputStream(uri)!!.use { raw ->
+                    ZipInputStream(BufferedInputStream(raw)).use { zip ->
+                        while (true) {
+                            val entry = zip.nextEntry ?: break
+                            val out = File(staging, entry.name).canonicalFile
+                            require(out.path.startsWith(staging.canonicalPath + File.separator)) { "Invalid archive path" }
+                            if (entry.isDirectory) out.mkdirs() else {
+                                out.parentFile?.mkdirs()
+                                FileOutputStream(out).use { zip.copyTo(it) }
+                            }
+                            zip.closeEntry()
+                        }
+                    }
+                }
+                val restored = readMeta(File(staging, META)).copy(
+                    id = UUID.randomUUID().toString(),
+                    title = readMeta(File(staging, META)).title + " (копия)",
+                    updatedAt = System.currentTimeMillis(), deletedAt = null,
+                )
+                val target = File(root, restored.id)
+                require(staging.renameTo(target)) { "Could not restore archive" }
+                atomicWrite(File(target, META)) { it.write(toJson(restored).toString().toByteArray()) }
+                _notebooks.value = (_notebooks.value + restored).sortedByDescending { it.updatedAt }
+                restored
+            } finally { staging.deleteRecursively() }
+        }.getOrNull()
+    }
+
     // ---------- Страницы ----------
 
     suspend fun loadPage(nb: Notebook, pageId: String): PageData = withContext(Dispatchers.IO) {
@@ -131,6 +193,33 @@ class NotebookRepository(context: Context) {
             f.parentFile?.mkdirs()
             atomicWrite(f) { out -> writePage(out, data) }
         }
+        handwritingCache.remove("${nb.id}/$pageId")
+    }
+
+    suspend fun searchHandwriting(query: String, maxPages: Int = Int.MAX_VALUE): List<HandwritingMatch> = withContext(Dispatchers.IO) {
+        val needle = query.trim()
+        if (needle.length < 2) return@withContext emptyList()
+        val matches = mutableListOf<HandwritingMatch>()
+        var inspected = 0
+        for (nb in _notebooks.value.filter { it.deletedAt == null }) {
+            for ((index, pageId) in nb.pages.withIndex()) {
+                if (inspected++ >= maxPages) return@withContext matches
+                val file = pageFile(nb, pageId)
+                if (!file.exists()) continue
+                val data = runCatching { readPage(file) }.getOrNull() ?: continue
+                val cacheKey = "${nb.id}/$pageId"
+                val recognized = handwritingCache[cacheKey] ?: try {
+                    com.pandortools.notecreate.ink.HandwritingRecognition.recognize(data.strokes)
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) { null }?.also { handwritingCache[cacheKey] = it }.orEmpty()
+                val searchable = (recognized + " " + data.textBlocks.joinToString(" ") { it.text }).trim()
+                if (searchable.contains(needle, ignoreCase = true)) {
+                    matches += HandwritingMatch(nb, index, searchable)
+                }
+            }
+        }
+        matches
     }
 
     suspend fun insertPage(nb: Notebook, index: Int, date: Long = System.currentTimeMillis()): Notebook {
@@ -212,6 +301,32 @@ class NotebookRepository(context: Context) {
         ImportedImage(name, bmp.width, bmp.height)
     }
 
+    /** Rasterizes PDF pages locally so handwriting can be layered and saved as ordinary notebook pages. */
+    suspend fun importPdfPages(nb: Notebook, uri: Uri): List<ImportedImage> = withContext(Dispatchers.IO) {
+        val output = mutableListOf<ImportedImage>()
+        val descriptor = appContext.contentResolver.openFileDescriptor(uri, "r") ?: return@withContext output
+        descriptor.use { pfd ->
+            PdfRenderer(pfd).use { pdf ->
+                for (index in 0 until pdf.pageCount) {
+                    pdf.openPage(index).use { page ->
+                        val width = 1600
+                        val height = (width * nb.pageHeight / nb.pageWidth).toInt().coerceIn(1200, 2800)
+                        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                        val canvas = Canvas(bitmap).apply { drawColor(Color.WHITE) }
+                        val scale = minOf(width.toFloat() / page.width, height.toFloat() / page.height)
+                        val dx = (width - page.width * scale) / 2f
+                        val dy = (height - page.height * scale) / 2f
+                        val matrix = Matrix().apply { setScale(scale, scale); postTranslate(dx, dy) }
+                        page.render(bitmap, null, matrix, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                        output += importBitmap(nb, bitmap)
+                        bitmap.recycle()
+                    }
+                }
+            }
+        }
+        output
+    }
+
     /** Загружает картинку для показа, уменьшая до maxSide. */
     fun decodeImage(nb: Notebook, fileName: String, maxSide: Int): Bitmap? {
         val f = imageFile(nb, fileName)
@@ -251,20 +366,36 @@ class NotebookRepository(context: Context) {
             d.writeFloat(s.width)
             d.writeInt(s.points.size)
             for (v in s.points) d.writeFloat(v)
+            d.writeUTF(s.layerId)
+            d.writeLong(s.createdAtMillis)
         }
         d.writeInt(data.images.size)
         for (im in data.images) {
             d.writeUTF(im.id); d.writeUTF(im.fileName)
             d.writeFloat(im.x); d.writeFloat(im.y); d.writeFloat(im.w); d.writeFloat(im.h)
             d.writeFloat(im.rotation); d.writeBoolean(im.locked)
+            d.writeUTF(im.layerId)
         }
+        d.writeInt(data.textBlocks.size)
+        for (text in data.textBlocks) {
+            d.writeUTF(text.id); d.writeUTF(text.text)
+            d.writeFloat(text.x); d.writeFloat(text.y); d.writeFloat(text.fontSize)
+            d.writeInt(text.color); d.writeUTF(text.fontFamily); d.writeUTF(text.layerId)
+        }
+        d.writeInt(data.layers.size)
+        for (layer in data.layers) {
+            d.writeUTF(layer.id); d.writeUTF(layer.name)
+            d.writeBoolean(layer.visible); d.writeBoolean(layer.locked)
+        }
+        d.writeUTF(data.template.name)
         d.flush()
     }
 
     private fun readPage(f: File): PageData {
         DataInputStream(BufferedInputStream(FileInputStream(f))).use { d ->
             if (d.readInt() != PAGE_MAGIC) return PageData()
-            d.readInt() // версия
+            val version = d.readInt()
+            if (version !in 1..PAGE_VERSION) return PageData()
             val pens = PenType.entries
             val strokes = ArrayList<Stroke>()
             repeat(d.readInt()) {
@@ -273,7 +404,9 @@ class NotebookRepository(context: Context) {
                 val width = d.readFloat()
                 val n = d.readInt()
                 val pts = FloatArray(n) { d.readFloat() }
-                strokes += Stroke(pen, color, width, pts)
+                val layerId = if (version >= 2) d.readUTF() else PageLayers.DRAWING
+                val createdAt = if (version >= 2) d.readLong() else System.currentTimeMillis()
+                strokes += Stroke(pen, color, width, pts, layerId, createdAt)
             }
             val images = ArrayList<ImageItem>()
             repeat(d.readInt()) {
@@ -281,9 +414,23 @@ class NotebookRepository(context: Context) {
                     id = d.readUTF(), fileName = d.readUTF(),
                     x = d.readFloat(), y = d.readFloat(), w = d.readFloat(), h = d.readFloat(),
                     rotation = d.readFloat(), locked = d.readBoolean(),
+                    layerId = if (version >= 2) d.readUTF() else PageLayers.NOTES,
                 )
             }
-            return PageData(strokes, images)
+            val textBlocks = if (version >= 2) ArrayList<TextBlock>().also { out ->
+                repeat(d.readInt().coerceIn(0, 10000)) {
+                    out += TextBlock(d.readUTF(), d.readUTF(), d.readFloat(), d.readFloat(), d.readFloat(),
+                        d.readInt(), d.readUTF(), d.readUTF())
+                }
+            } else emptyList()
+            val layers = if (version >= 2) ArrayList<PageLayer>().also { out ->
+                repeat(d.readInt().coerceIn(0, 100)) {
+                    out += PageLayer(d.readUTF(), d.readUTF(), d.readBoolean(), d.readBoolean())
+                }
+            } else PageLayers.defaults
+            val template = if (version >= 3) runCatching { PageTemplate.valueOf(d.readUTF()) }.getOrDefault(PageTemplate.NONE)
+                else PageTemplate.NONE
+            return PageData(strokes, images, textBlocks, layers, template)
         }
     }
 
@@ -297,6 +444,7 @@ class NotebookRepository(context: Context) {
         nb.customHeightMm?.let { put("customHeightMm", it) }
         nb.groupName?.let { put("groupName", it) }
         put("pages", JSONArray(nb.pages))
+        put("bookmarks", JSONArray(nb.bookmarks.toList()))
         put("pageDates", JSONObject().apply { nb.pageDates.forEach { (k, v) -> put(k, v) } })
         put("lastPage", nb.lastPage); put("favorite", nb.favorite)
         put("createdAt", nb.createdAt); put("updatedAt", nb.updatedAt)
@@ -326,6 +474,7 @@ class NotebookRepository(context: Context) {
             customHeightMm = if (o.has("customHeightMm")) o.optDouble("customHeightMm").toFloat() else null,
             groupName = o.optString("groupName").takeIf { it.isNotBlank() },
             pages = pages,
+            bookmarks = o.optJSONArray("bookmarks")?.let { a -> List(a.length()) { a.optString(it) }.toSet() }.orEmpty(),
             pageDates = dates,
             lastPage = o.optInt("lastPage", 0).coerceIn(0, max(0, pages.size - 1)),
             favorite = o.optBoolean("favorite", false),
@@ -339,11 +488,12 @@ class NotebookRepository(context: Context) {
         runCatching { enumValueOf<E>(name ?: "") }.getOrDefault(default)
 
     data class ImportedImage(val fileName: String, val width: Int, val height: Int)
+    data class HandwritingMatch(val notebook: Notebook, val pageIndex: Int, val recognizedText: String)
 
     companion object {
         private const val META = "meta.json"
         private const val PAGE_MAGIC = 0x4E435031 // "NCP1"
-        private const val PAGE_VERSION = 1
+        private const val PAGE_VERSION = 3
         private const val MAX_IMAGE = 2560
         private const val TRASH_TTL = 30L * 24 * 60 * 60 * 1000
     }

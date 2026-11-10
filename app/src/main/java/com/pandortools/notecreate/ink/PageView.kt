@@ -22,6 +22,9 @@ import android.view.animation.DecelerateInterpolator
 import com.pandortools.notecreate.data.ImageItem
 import com.pandortools.notecreate.data.Notebook
 import com.pandortools.notecreate.data.PageData
+import com.pandortools.notecreate.data.PageLayer
+import com.pandortools.notecreate.data.PageLayers
+import com.pandortools.notecreate.data.TextBlock
 import com.pandortools.notecreate.data.PageTurnStyle
 import com.pandortools.notecreate.data.ThreeFingerAction
 import com.pandortools.notecreate.data.PenType
@@ -64,6 +67,7 @@ class PageView(context: Context) : View(context) {
     var pen = PenType.BALLPOINT
     var color = Color.BLACK
     var penWidth = 1.6f
+    var activeLayerId = PageLayers.DRAWING
     var eraserMode = EraserMode.STROKE
     var eraserSize = 8f
     var eraseOnlyHighlighter = false
@@ -166,9 +170,20 @@ class PageView(context: Context) : View(context) {
         commit(transform(page))
     }
 
+    fun addTextBlock(block: TextBlock) {
+        commit(page.copy(textBlocks = page.textBlocks + block))
+    }
+
+    fun updateLayer(layer: PageLayer) {
+        val layers = if (page.layers.any { it.id == layer.id }) page.layers.map { if (it.id == layer.id) layer else it }
+        else page.layers + layer
+        commit(page.copy(layers = layers))
+    }
+
     fun insertImage(item: ImageItem) {
-        commit(page.copy(images = page.images + item))
-        selection = Selection(emptySet(), setOf(item.id))
+        val layered = item.copy(layerId = activeLayerId)
+        commit(page.copy(images = page.images + layered))
+        selection = Selection(emptySet(), setOf(layered.id))
         updateSelectionBounds()
         notifySelection()
     }
@@ -306,19 +321,28 @@ class PageView(context: Context) : View(context) {
         ink.eraseColor(Color.TRANSPARENT)
         val c1 = Canvas(bg)
         c1.concat(viewMatrix)
-        renderer.drawPaper(c1, nb, pageDate)
-        for (im in page.images) if (im.id !in excludeImages) renderer.drawImage(c1, im, imageLoader(im))
+        if (page.layer(PageLayers.BACKGROUND)?.visible != false) {
+            renderer.drawPaper(c1, nb, pageDate)
+            renderer.drawTemplate(c1, page, nb)
+        }
+        for (im in page.images) if (im.id !in excludeImages && page.layer(im.layerId)?.visible != false) renderer.drawImage(c1, im, imageLoader(im))
         renderInk(ink)
         cacheMatrix.set(viewMatrix)
         cacheValid = true
     }
 
+    /** Штрихи, которые сейчас видны: во время стирания — рабочий список ластика. */
+    private fun visibleStrokes(): List<Stroke> = eraseWorking ?: page.strokes
+
     private fun renderInk(ink: Bitmap) {
         ink.eraseColor(Color.TRANSPARENT)
         val c = Canvas(ink)
         c.concat(viewMatrix)
-        page.strokes.forEachIndexed { i, s -> if (s.pen == PenType.HIGHLIGHTER && i !in excludeStrokes) renderer.drawStroke(c, s) }
-        page.strokes.forEachIndexed { i, s -> if (s.pen != PenType.HIGHLIGHTER && i !in excludeStrokes) renderer.drawStroke(c, s) }
+        val strokes = visibleStrokes()
+        strokes.forEachIndexed { i, s -> if (page.layer(s.layerId)?.visible != false && s.pen == PenType.HIGHLIGHTER && i !in excludeStrokes) renderer.drawStroke(c, s) }
+        strokes.forEachIndexed { i, s -> if (page.layer(s.layerId)?.visible != false && s.pen != PenType.HIGHLIGHTER && i !in excludeStrokes) renderer.drawStroke(c, s) }
+        page.textBlocks.forEach { if (page.layer(it.layerId)?.visible != false) renderer.drawText(c, it) }
+        inkDirty = false
     }
 
     // =====================================================================
@@ -332,6 +356,8 @@ class PageView(context: Context) : View(context) {
         if (turn != null) { drawTurn(canvas, turn, nb); return }
 
         ensureCaches()
+        // Ластик меняет штрихи на каждом движении — перерисовываем слой чернил не чаще раза за кадр.
+        if (inkDirty && cacheValid) inkCache?.let { renderInk(it) }
         drawPageShadow(canvas)
         val delta = Matrix()
         val inv = Matrix()
@@ -347,7 +373,7 @@ class PageView(context: Context) : View(context) {
         canvas.save()
         canvas.concat(viewMatrix)
         // Текущий штрих
-        if (curCount > 0) renderer.drawStroke(canvas, Stroke(curPen, curColor, curWidth, curPts.copyOf(curCount * Stroke.STRIDE)))
+        if (curCount > 0) renderer.drawStroke(canvas, recognizedShape ?: rawCurrentStroke())
         // Выделение
         selection?.let { drawSelection(canvas, it) }
         // Лассо
@@ -385,6 +411,81 @@ class PageView(context: Context) : View(context) {
                 canvas.drawCircle(cx, cy, max(1f, r - 2f), uiPaint)
             }
         }
+        if (rulerVisible) drawRuler(canvas)
+    }
+
+    private fun rawCurrentStroke() = Stroke(curPen, curColor, curWidth,
+        curPts.copyOf(curCount * Stroke.STRIDE), activeLayerId)
+
+    private fun rulerLocal(x: Float, y: Float): PointF {
+        val a = Math.toRadians((-rulerAngle).toDouble())
+        val dx = x - rulerCenterX; val dy = y - rulerCenterY
+        return PointF((dx * kotlin.math.cos(a) - dy * kotlin.math.sin(a)).toFloat(),
+            (dx * kotlin.math.sin(a) + dy * kotlin.math.cos(a)).toFloat())
+    }
+
+    private fun isOnRuler(x: Float, y: Float): Boolean {
+        val p = rulerLocal(x, y)
+        return abs(p.x) <= rulerLength / 2f && abs(p.y) <= rulerHeight / 2f
+    }
+
+    private fun drawRuler(canvas: Canvas) {
+        if (rulerCenterX == 0f && rulerCenterY == 0f) { rulerCenterX = width / 2f; rulerCenterY = height / 2f }
+        canvas.save()
+        canvas.rotate(rulerAngle, rulerCenterX, rulerCenterY)
+        val left = rulerCenterX - rulerLength / 2f
+        val top = rulerCenterY - rulerHeight / 2f
+        val rect = RectF(left, top, left + rulerLength, top + rulerHeight)
+        shadowPaint.color = Color.argb(218, 248, 246, 232)
+        canvas.drawRoundRect(rect, 8f * density, 8f * density, shadowPaint)
+        uiPaint.color = Color.argb(220, 46, 76, 107)
+        uiPaint.strokeWidth = 1.5f * density
+        uiPaint.style = Paint.Style.STROKE
+        canvas.drawRoundRect(rect, 8f * density, 8f * density, uiPaint)
+        uiPaint.style = Paint.Style.FILL
+        shadowPaint.color = Color.argb(175, 46, 76, 107)
+        var x = left + 8f * density
+        var i = 0
+        while (x < left + rulerLength - 6f * density) {
+            val tick = if (i % 5 == 0) 16f else if (i % 2 == 0) 11f else 7f
+            canvas.drawLine(x, top + rulerHeight - 3f * density, x, top + rulerHeight - tick * density, shadowPaint)
+            x += 12f * density; i++
+        }
+        uiPaint.style = Paint.Style.STROKE
+        canvas.restore()
+    }
+
+    private fun snapToRuler(x: Float, y: Float): PointF {
+        if (!rulerVisible) return PointF(x, y)
+        val screen = floatArrayOf(x, y); viewMatrix.mapPoints(screen)
+        val p = rulerLocal(screen[0], screen[1])
+        if (abs(p.x) > rulerLength / 2f + 12f * density || abs(p.y) > rulerHeight / 2f + 18f * density) return PointF(x, y)
+        p.y = if (p.y < 0f) -rulerHeight / 2f else rulerHeight / 2f
+        val a = Math.toRadians(rulerAngle.toDouble())
+        screen[0] = rulerCenterX + (p.x * kotlin.math.cos(a) - p.y * kotlin.math.sin(a)).toFloat()
+        screen[1] = rulerCenterY + (p.x * kotlin.math.sin(a) + p.y * kotlin.math.cos(a)).toFloat()
+        inverse.mapPoints(screen)
+        return PointF(screen[0], screen[1])
+    }
+
+    private fun onRulerMove(e: MotionEvent) {
+        when (mode) {
+            Mode.RULER_MOVE -> {
+                val i = e.findPointerIndex(activePointerId)
+                if (i >= 0) { rulerCenterX = e.getX(i); rulerCenterY = e.getY(i) }
+            }
+            Mode.RULER_TRANSFORM -> {
+                val ia = e.findPointerIndex(rulerPointerA); val ib = e.findPointerIndex(rulerPointerB)
+                if (ia >= 0 && ib >= 0) {
+                    rulerCenterX = (e.getX(ia) + e.getX(ib)) / 2f
+                    rulerCenterY = (e.getY(ia) + e.getY(ib)) / 2f
+                    val angle = kotlin.math.atan2((e.getY(ib) - e.getY(ia)).toDouble(), (e.getX(ib) - e.getX(ia)).toDouble())
+                    rulerAngle = rulerStartAngle + Math.toDegrees(angle - rulerStartPointerAngle).toFloat()
+                }
+            }
+            else -> Unit
+        }
+        invalidate()
     }
 
     private fun drawPageShadow(canvas: Canvas) {
@@ -426,7 +527,7 @@ class PageView(context: Context) : View(context) {
     // Ввод
     // =====================================================================
 
-    private enum class Mode { NONE, DRAW, ERASE, LASSO, SEL_MOVE, SEL_SCALE, SEL_ROTATE, PINCH, PAN, TURN_PENDING, FINGER_IDLE }
+    private enum class Mode { NONE, DRAW, ERASE, LASSO, SEL_MOVE, SEL_SCALE, SEL_ROTATE, RULER_MOVE, RULER_TRANSFORM, PINCH, PAN, TURN_PENDING, FINGER_IDLE }
 
     private var mode = Mode.NONE
     private var activePointerId = -1
@@ -440,6 +541,33 @@ class PageView(context: Context) : View(context) {
     private var curWidth = 1.6f
     private var lastX = 0f
     private var lastY = 0f
+    private var recognizedShape: Stroke? = null
+    private var lastStrokeMotionAt = 0L
+    private val shapeHoldRunnable = Runnable {
+        if (mode == Mode.DRAW && activePointerIsStylus && curCount >= 7 &&
+            android.os.SystemClock.uptimeMillis() - lastStrokeMotionAt >= SHAPE_HOLD_MS) {
+            recognizedShape = ShapeRecognizer.recognize(rawCurrentStroke())
+            invalidate()
+        }
+    }
+
+    var rulerVisible = false
+        set(value) {
+            field = value
+            if (value && rulerCenterX == 0f && rulerCenterY == 0f) {
+                rulerCenterX = width / 2f; rulerCenterY = height / 2f
+            }
+            invalidate()
+        }
+    private var rulerCenterX = 0f
+    private var rulerCenterY = 0f
+    private var rulerAngle = 0f
+    private var rulerStartAngle = 0f
+    private var rulerStartPointerAngle = 0f
+    private var rulerPointerA = -1
+    private var rulerPointerB = -1
+    private val rulerLength get() = 250f * density
+    private val rulerHeight get() = 52f * density
 
     // ластик
     private var erasingTemp = false
@@ -523,6 +651,34 @@ class PageView(context: Context) : View(context) {
             return true
         }
 
+        if (action == MotionEvent.ACTION_DOWN && !isStylus(e, e.actionIndex) && rulerVisible && isOnRuler(e.x, e.y)) {
+            activePointerId = e.getPointerId(e.actionIndex)
+            mode = Mode.RULER_MOVE
+            return true
+        }
+        if (action == MotionEvent.ACTION_POINTER_DOWN && mode == Mode.RULER_MOVE) {
+            rulerPointerA = activePointerId
+            rulerPointerB = e.getPointerId(e.actionIndex)
+            val ia = e.findPointerIndex(rulerPointerA); val ib = e.actionIndex
+            rulerCenterX = (e.getX(ia) + e.getX(ib)) / 2f
+            rulerCenterY = (e.getY(ia) + e.getY(ib)) / 2f
+            rulerStartAngle = rulerAngle
+            rulerStartPointerAngle = kotlin.math.atan2((e.getY(ib) - e.getY(ia)).toDouble(), (e.getX(ib) - e.getX(ia)).toDouble()).toFloat()
+            mode = Mode.RULER_TRANSFORM
+            return true
+        }
+        if (action == MotionEvent.ACTION_MOVE && (mode == Mode.RULER_MOVE || mode == Mode.RULER_TRANSFORM)) {
+            onRulerMove(e)
+            return true
+        }
+        if ((action == MotionEvent.ACTION_POINTER_UP || action == MotionEvent.ACTION_UP) &&
+            (mode == Mode.RULER_MOVE || mode == Mode.RULER_TRANSFORM)) {
+            mode = Mode.NONE
+            activePointerId = -1
+            invalidate()
+            return true
+        }
+
         when (action) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                 val idx = e.actionIndex
@@ -601,6 +757,10 @@ class PageView(context: Context) : View(context) {
         val y = e.getY(idx)
         val p = toPage(x, y)
 
+        if (tool == EditorTool.PEN && page.layer(activeLayerId)?.locked == true) {
+            cursorX = x; cursorY = y; invalidate(); return
+        }
+
         // Сначала — взаимодействие с выделением
         var sel = selection
         if (sel == null && stylus && tool == EditorTool.PEN) {
@@ -633,6 +793,7 @@ class PageView(context: Context) : View(context) {
             buttonEraser || tool == EditorTool.ERASER -> {
                 mode = Mode.ERASE
                 undoBase = page
+                softTouched.clear()
                 eraseWorking = page.strokes.toMutableList()
                 eraseChanged = false
                 cursorEraser = true
@@ -670,16 +831,24 @@ class PageView(context: Context) : View(context) {
     }
 
     private fun addPoint(x: Float, y: Float, pressure: Float, tilt: Float, force: Boolean = false) {
+        val snapped = if (activePointerIsStylus) snapToRuler(x, y) else PointF(x, y)
+        val inputX = snapped.x; val inputY = snapped.y
         // Стабилизатор: экспоненциальное сглаживание
         val k = 1f - smoothing.coerceIn(0f, 0.95f) * 0.85f
-        val sx = if (curCount == 0) x else lastX + (x - lastX) * k
-        val sy = if (curCount == 0) y else lastY + (y - lastY) * k
+        val sx = if (curCount == 0) inputX else lastX + (inputX - lastX) * k
+        val sy = if (curCount == 0) inputY else lastY + (inputY - lastY) * k
         if (!force && curCount > 0 && hypot(sx - lastX, sy - lastY) < 0.12f) return
         if ((curCount + 1) * Stroke.STRIDE > curPts.size) curPts = curPts.copyOf(curPts.size * 2)
         val o = curCount * Stroke.STRIDE
         curPts[o] = sx; curPts[o + 1] = sy; curPts[o + 2] = pressure; curPts[o + 3] = tilt
         curCount++
         lastX = sx; lastY = sy
+        recognizedShape = null
+        if (activePointerIsStylus && curCount >= 7) {
+            lastStrokeMotionAt = android.os.SystemClock.uptimeMillis()
+            removeCallbacks(shapeHoldRunnable)
+            postDelayed(shapeHoldRunnable, SHAPE_HOLD_MS)
+        }
     }
 
     private fun onMove(e: MotionEvent) {
@@ -793,8 +962,9 @@ class PageView(context: Context) : View(context) {
 
     private fun cancelGesture() {
         removeCallbacks(longPressRunnable)
+        removeCallbacks(shapeHoldRunnable)
         when (mode) {
-            Mode.DRAW -> curCount = 0
+            Mode.DRAW -> { curCount = 0; recognizedShape = null }
             Mode.ERASE -> { eraseWorking = null; undoBase?.let { page = it }; undoBase = null; invalidateCaches() }
             Mode.LASSO -> lassoPts.clear()
             Mode.SEL_MOVE, Mode.SEL_SCALE, Mode.SEL_ROTATE -> { selMatrix.reset(); selTransforming = false; excludeStrokes = emptySet(); excludeImages = emptySet(); invalidateCaches() }
@@ -810,8 +980,10 @@ class PageView(context: Context) : View(context) {
     // ---------- Штрих ----------
 
     private fun commitStroke() {
+        removeCallbacks(shapeHoldRunnable)
         if (curCount == 0) return
-        val stroke = Stroke(curPen, curColor, curWidth, curPts.copyOf(curCount * Stroke.STRIDE))
+        val stroke = recognizedShape ?: rawCurrentStroke()
+        recognizedShape = null
         curCount = 0
         val newPage = page.copy(strokes = page.strokes + stroke)
         // Быстрый путь: дорисовываем штрих прямо в кэш
@@ -830,59 +1002,62 @@ class PageView(context: Context) : View(context) {
         val list = eraseWorking ?: return
         val r = eraserSize
         val onlyHl = eraseOnlyHighlighter && !erasingTemp
-        if (eraserMode == EraserMode.SOFT) {
-            var changed = false
-            for (i in list.indices) {
-                val stroke = list[i]
-                if ((!onlyHl || stroke.pen == PenType.HIGHLIGHTER) && Geometry.circleHitsStroke(stroke, px, py, r)) {
-                    val alpha = (Color.alpha(stroke.color) * 0.78f).toInt().coerceAtLeast(20)
-                    val faded = Color.argb(alpha, Color.red(stroke.color), Color.green(stroke.color), Color.blue(stroke.color))
-                    if (faded != stroke.color) { list[i] = Stroke(stroke.pen, faded, stroke.width, stroke.points); changed = true }
+        var changed = false
+        when (eraserMode) {
+            EraserMode.SOFT -> {
+                // Мягкий ластик: каждый задетый штрих за одно касание бледнеет один раз.
+                for (i in list.indices) {
+                    if (i in softTouched) continue
+                    val stroke = list[i]
+                    if ((!onlyHl || stroke.pen == PenType.HIGHLIGHTER) &&
+                        page.layer(stroke.layerId)?.visible != false && page.layer(stroke.layerId)?.locked != true &&
+                        Geometry.circleHitsStroke(stroke, px, py, r)) {
+                        softTouched += i
+                        val alpha = (Color.alpha(stroke.color) * 0.5f).toInt().coerceAtLeast(24)
+                        val faded = Color.argb(alpha, Color.red(stroke.color), Color.green(stroke.color), Color.blue(stroke.color))
+                        if (faded != stroke.color) { list[i] = Stroke(stroke.pen, faded, stroke.width, stroke.points); changed = true }
+                    }
                 }
             }
-            if (changed) {
-                eraseChanged = true
-                page = page.copy(strokes = list.toList())
-                invalidateCaches()
+            EraserMode.STROKE -> {
+                val before = list.size
+                list.removeAll { (!onlyHl || it.pen == PenType.HIGHLIGHTER) &&
+                    page.layer(it.layerId)?.visible != false && page.layer(it.layerId)?.locked != true &&
+                    Geometry.circleHitsStroke(it, px, py, r) }
+                changed = list.size != before
             }
-        } else if (eraserMode == EraserMode.STROKE) {
-            val before = list.size
-            list.removeAll { (!onlyHl || it.pen == PenType.HIGHLIGHTER) && Geometry.circleHitsStroke(it, px, py, r) }
-            if (list.size != before) {
-                eraseChanged = true
-                page = page.copy(strokes = list.toList())
-                inkCache?.let { renderInk(it); cacheMatrix.set(viewMatrix) }
-            }
-        } else {
-            var changed = false
-            val out = ArrayList<Stroke>(list.size)
-            for (s in list) {
-                if (onlyHl && s.pen != PenType.HIGHLIGHTER) { out += s; continue }
-                val parts = Geometry.eraseCircle(s, px, py, r)
-                if (parts == null) out += s else { out.addAll(parts); changed = true }
-            }
-            if (changed) {
-                eraseChanged = true
-                list.clear(); list.addAll(out)
-                // мгновенно стираем в кэше, точный перерасчёт — в конце жеста
-                val ink = inkCache
-                if (ink != null && cacheValid) {
-                    val c = Canvas(ink); c.concat(viewMatrix)
-                    c.drawCircle(px, py, r, clearPaint)
-                } else invalidateCaches()
+            EraserMode.AREA -> {
+                val out = ArrayList<Stroke>(list.size)
+                for (s in list) {
+                    if (page.layer(s.layerId)?.visible == false || page.layer(s.layerId)?.locked == true) { out += s; continue }
+                    if (onlyHl && s.pen != PenType.HIGHLIGHTER) { out += s; continue }
+                    val parts = Geometry.eraseCircle(s, px, py, r)
+                    if (parts == null) out += s else { out.addAll(parts); changed = true }
+                }
+                if (changed) { list.clear(); list.addAll(out) }
             }
         }
+        if (changed) {
+            eraseChanged = true
+            inkDirty = true
+            invalidate()
+        }
     }
+
+    /** Слой чернил устарел (идёт стирание). */
+    private var inkDirty = false
+    private val softTouched = HashSet<Int>()
 
     private fun finishErase() {
         val list = eraseWorking
         eraseWorking = null
         cursorX = null; cursorY = null
-        if (list == null || !eraseChanged) { page = undoAwarePageRestore(); return }
+        if (list == null || !eraseChanged) { page = undoAwarePageRestore(); softTouched.clear(); invalidateCaches(); return }
         val original = undoBase ?: page
         undoBase = null
         val result = page.copy(strokes = list.toList())
         page = original
+        softTouched.clear()
         commit(result)
     }
 
@@ -896,8 +1071,12 @@ class PageView(context: Context) : View(context) {
         val region = Geometry.lassoRegion(lassoPts)
         lassoPts.clear()
         if (region == null) return
-        val strokes = page.strokes.indices.filter { Geometry.strokeInRegion(page.strokes[it], region) }.toSet()
-        val images = page.images.filter { !it.locked && Geometry.imageInRegion(it, region) }.map { it.id }.toSet()
+        val strokes = page.strokes.indices.filter {
+            page.layer(page.strokes[it].layerId)?.visible != false && Geometry.strokeInRegion(page.strokes[it], region)
+        }.toSet()
+        val images = page.images.filter {
+            !it.locked && page.layer(it.layerId)?.visible != false && Geometry.imageInRegion(it, region)
+        }.map { it.id }.toSet()
         if (strokes.isEmpty() && images.isEmpty()) return
         selection = Selection(strokes, images)
         updateSelectionBounds()
@@ -1251,6 +1430,7 @@ class PageView(context: Context) : View(context) {
     }
 
     companion object {
+        private const val SHAPE_HOLD_MS = 520L
         private const val MAX_HISTORY = 100
         private const val HANDLE_DP = 28f
     }

@@ -16,127 +16,224 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
+import androidx.compose.material.icons.outlined.AspectRatio
+import androidx.compose.material.icons.outlined.BackHand
+import androidx.compose.material.icons.outlined.Brightness6
+import androidx.compose.material.icons.outlined.BrightnessAuto
+import androidx.compose.material.icons.outlined.Code
+import androidx.compose.material.icons.outlined.CropLandscape
+import androidx.compose.material.icons.outlined.CropPortrait
+import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Gesture
+import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.LightMode
+import androidx.compose.material.icons.outlined.PhoneAndroid
+import androidx.compose.material.icons.outlined.PictureAsPdf
+import androidx.compose.material.icons.outlined.SwapHoriz
+import androidx.compose.material.icons.outlined.Today
+import androidx.compose.material.icons.outlined.TouchApp
+import androidx.compose.material.icons.outlined.Gavel
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.widget.Toast
 import com.pandortools.notecreate.data.AppGraph
 import com.pandortools.notecreate.data.Orientation
 import com.pandortools.notecreate.data.PageFormat
 import com.pandortools.notecreate.data.PageTurnStyle
-import com.pandortools.notecreate.data.ThreeFingerAction
 import com.pandortools.notecreate.data.StartScreen
 import com.pandortools.notecreate.data.ThemeMode
+import com.pandortools.notecreate.data.ThreeFingerAction
 import com.pandortools.notecreate.ui.common.AppLogo
+import com.pandortools.notecreate.ui.common.IconChip
+import com.pandortools.notecreate.ui.common.RowDivider
+import com.pandortools.notecreate.ui.common.SegmentedRow
+import com.pandortools.notecreate.ui.common.SettingRow
+import com.pandortools.notecreate.ui.common.SettingsCard
+import com.pandortools.notecreate.ui.common.SliderRow
+import com.pandortools.notecreate.ui.common.SwitchRow
+import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 
 @Composable
 fun SettingsScreen(onBack: () -> Unit) {
     val store = AppGraph.settings
     val s by store.state.collectAsState()
     val context = LocalContext.current
-    var section by remember { mutableIntStateOf(0) }
+    val notebooks by AppGraph.repository.notebooks.collectAsState()
+    val scope = rememberCoroutineScope()
+    val exportTarget = remember { androidx.compose.runtime.mutableStateOf<com.pandortools.notecreate.data.Notebook?>(null) }
+    val exportBackup = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        val target = exportTarget.value
+        if (uri != null && target != null) scope.launch {
+            val ok = AppGraph.repository.exportNotebook(target, uri)
+            Toast.makeText(context, if (ok) "Резервная копия сохранена" else "Не удалось сохранить копию", Toast.LENGTH_LONG).show()
+        }
+    }
+    val importBackup = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch {
+            val nb = AppGraph.repository.importNotebook(uri)
+            Toast.makeText(context, if (nb != null) "Тетрадь «${nb.title}» восстановлена" else "Не удалось открыть архив .ncbook", Toast.LENGTH_LONG).show()
+        }
+    }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = { Text("Настройки") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад") } },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )
         },
     ) { pad ->
         Box(Modifier.fillMaxSize().padding(pad), contentAlignment = Alignment.TopCenter) {
             Column(
-                Modifier.widthIn(max = 720.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+                Modifier
+                    .widthIn(max = 720.dp)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(section == 0, { section = 0 }, { Text("Письмо") }, leadingIcon = { Icon(Icons.Outlined.Edit, null, Modifier.size(18.dp)) })
-                    FilterChip(section == 1, { section = 1 }, { Text("Тетради") }, leadingIcon = { Icon(Icons.AutoMirrored.Outlined.MenuBook, null, Modifier.size(18.dp)) })
-                    FilterChip(section == 2, { section = 2 }, { Text("Внешний вид") }, leadingIcon = { Icon(Icons.Outlined.Palette, null, Modifier.size(18.dp)) })
-                    FilterChip(section == 3, { section = 3 }, { Text("О приложении") }, leadingIcon = { Icon(Icons.Outlined.Info, null, Modifier.size(18.dp)) })
-                }
-                when (section) {
-                0 -> {
-                Header("Письмо и стилус", Icons.Outlined.Edit)
-                SwitchRow("Рисовать пальцем", "Иначе палец только листает и масштабирует, а пишет стилус", s.fingerDraw) {
-                    store.update { st -> st.copy(fingerDraw = it) }
-                }
-                SwitchRow("Режим для левши", "Номер страницы и кнопки — с другой стороны", s.leftHanded) {
-                    store.update { st -> st.copy(leftHanded = it) }
-                }
-                Choice("Тройное касание тремя пальцами", ThreeFingerAction.entries, s.threeFingerAction, { it.title }) {
-                    v -> store.update { it.copy(threeFingerAction = v) }
-                }
-                Text("Быстро коснись листа тремя пальцами, чтобы выполнить выбранное действие. Щипок двумя пальцами масштабирует и перемещает страницу; длинный горизонтальный свайп перелистывает лист или создаёт следующий.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("Кнопки стилуса настраиваются в системных настройках пера. " +
-                    "Удержание нижней кнопки во время письма включает временный ластик.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-
-                }
-                1 -> {
-                Header("Тетради и страницы", Icons.AutoMirrored.Outlined.MenuBook)
-                Choice("Перелистывание", PageTurnStyle.entries, s.pageTurn, { it.title }) { v -> store.update { it.copy(pageTurn = v) } }
-                Choice("При запуске открывать", StartScreen.entries, s.startScreen, { it.title }) { v -> store.update { it.copy(startScreen = v) } }
-                SwitchRow("Дневник: новый день — новая страница", "Страница с сегодняшней датой создаётся сама", s.newDayNewPage) {
-                    store.update { st -> st.copy(newDayNewPage = it) }
-                }
-                Choice("Формат по умолчанию", PageFormat.entries, s.defaultFormat, { it.title }) { v -> store.update { it.copy(defaultFormat = v) } }
-                Choice("Ориентация по умолчанию", Orientation.entries, s.defaultOrientation, { it.title }) { v -> store.update { it.copy(defaultOrientation = v) } }
-
-                }
-                2 -> {
-                Header("Внешний вид", Icons.Outlined.Palette)
-                Choice("Тема", ThemeMode.entries, s.theme, { it.title }) { v -> store.update { it.copy(theme = v) } }
-                }
-                else -> {
-                Header("Данные и приложение", Icons.Outlined.Info)
-                Text("Все тетради хранятся только на этом устройстве, без облака и аккаунтов. " +
-                    "Чтобы перенести записи, экспортируй тетрадь в PDF из меню тетради.",
-                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-
-                HorizontalDivider()
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    AppLogo(Modifier.size(48.dp))
-                    Spacer(Modifier.size(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("NoteCreate", style = MaterialTheme.typography.titleMedium)
-                        Text("Версия ${appVersion(context)} · бесплатно и без рекламы", style = MaterialTheme.typography.bodySmall)
+                SettingsCard("Письмо и стилус") {
+                    SwitchRow(Icons.Outlined.TouchApp, "Рисовать пальцем",
+                        "Без этого палец только листает и масштабирует", s.fingerDraw) {
+                        store.update { st -> st.copy(fingerDraw = it) }
                     }
-                    TextButton(onClick = {
-                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/PandorTools")))
-                    }) { Text("GitHub") }
+                    RowDivider()
+                    SwitchRow(Icons.Outlined.SwapHoriz, "Режим для левши",
+                        "Кнопки страниц переедут на правую сторону", s.leftHanded) {
+                        store.update { st -> st.copy(leftHanded = it) }
+                    }
+                    RowDivider()
+                    SliderRow(Icons.Outlined.Gesture, "Сглаживание линии", "${(s.smoothing * 100).roundToInt()}%",
+                        s.smoothing, 0f..0.9f) { v -> store.update { it.copy(smoothing = v) } }
+                    RowDivider()
+                    SegmentedRow(
+                        Icons.Outlined.BackHand, "Касание тремя пальцами",
+                        ThreeFingerAction.entries, s.threeFingerAction, { it.title },
+                    ) { v -> store.update { it.copy(threeFingerAction = v) } }
+                    RowDivider()
+                    SettingRow(Icons.Outlined.Edit, "Кнопка стилуса",
+                        "Удерживай её во время письма — включится ластик. Назначение кнопок меняется в настройках пера Android.")
                 }
+
+                SettingsCard("Тетради") {
+                    SegmentedRow(
+                        Icons.AutoMirrored.Outlined.MenuBook, "Перелистывание",
+                        PageTurnStyle.entries, s.pageTurn, { it.title },
+                    ) { v -> store.update { it.copy(pageTurn = v) } }
+                    RowDivider()
+                    SegmentedRow(
+                        Icons.Outlined.Home, "При запуске открывать",
+                        StartScreen.entries, s.startScreen, { it.title },
+                    ) { v -> store.update { it.copy(startScreen = v) } }
+                    RowDivider()
+                    SwitchRow(Icons.Outlined.Today, "Новый день — новая страница",
+                        "Для дневников: страница с сегодняшней датой появится сама", s.newDayNewPage) {
+                        store.update { st -> st.copy(newDayNewPage = it) }
+                    }
+                    RowDivider()
+                    Column(Modifier.padding(bottom = 12.dp)) {
+                        SettingRow(Icons.Outlined.AspectRatio, "Формат новых тетрадей", s.defaultFormat.title)
+                        FlowRow(
+                            Modifier.padding(start = 70.dp, end = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            PageFormat.entries.filter { it != PageFormat.CUSTOM }.forEach { f ->
+                                IconChip(f == s.defaultFormat, f.title) { store.update { it.copy(defaultFormat = f) } }
+                            }
+                        }
+                    }
+                    RowDivider()
+                    SegmentedRow(
+                        Icons.Outlined.CropPortrait, "Ориентация новых тетрадей",
+                        Orientation.entries, s.defaultOrientation, { it.title },
+                        optionIcon = { if (it == Orientation.PORTRAIT) Icons.Outlined.CropPortrait else Icons.Outlined.CropLandscape },
+                    ) { v -> store.update { it.copy(defaultOrientation = v) } }
                 }
+
+                SettingsCard("Оформление") {
+                    SegmentedRow(
+                        Icons.Outlined.Brightness6, "Тема",
+                        ThemeMode.entries, s.theme, { it.title },
+                        optionIcon = {
+                            when (it) {
+                                ThemeMode.SYSTEM -> Icons.Outlined.BrightnessAuto
+                                ThemeMode.LIGHT -> Icons.Outlined.LightMode
+                                ThemeMode.DARK -> Icons.Outlined.DarkMode
+                            }
+                        },
+                    ) { v -> store.update { it.copy(theme = v) } }
                 }
-                Spacer(Modifier.height(40.dp))
+
+                SettingsCard("Данные") {
+                    SettingRow(Icons.Outlined.PhoneAndroid, "Хранятся на устройстве",
+                        "Без облака и аккаунтов. Никто, кроме тебя, их не видит.")
+                    RowDivider()
+                    SettingRow(Icons.Outlined.PictureAsPdf, "Восстановить .ncbook",
+                        "Открой резервную копию тетради с устройства", onClick = { importBackup.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) })
+                    notebooks.filter { it.deletedAt == null }.forEach { notebook ->
+                        RowDivider()
+                        SettingRow(Icons.AutoMirrored.Outlined.MenuBook, "Сохранить «${notebook.title}»",
+                            "Создать переносимый архив .ncbook", onClick = {
+                                exportTarget.value = notebook
+                                exportBackup.launch("${notebook.title}.ncbook")
+                            })
+                    }
+                }
+
+                SettingsCard("О приложении") {
+                    Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        AppLogo(Modifier.size(52.dp))
+                        Spacer(Modifier.width(16.dp))
+                        Column {
+                            Text("NoteCreate", style = MaterialTheme.typography.titleMedium)
+                            Text("Версия ${appVersion(context)} · бесплатно и без рекламы",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    RowDivider()
+                    SettingRow(Icons.Outlined.Code, "Исходный код", "github.com/PandorTools/NoteCreate",
+                        onClick = {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/PandorTools/NoteCreate")))
+                        }) {
+                        Icon(Icons.AutoMirrored.Outlined.OpenInNew, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    RowDivider()
+                    SettingRow(Icons.Outlined.Gavel, "Лицензия", "MIT — можно пользоваться и изменять свободно")
+                    RowDivider()
+                    SettingRow(Icons.Outlined.Info, "Отзывы и идеи", "Пиши в Issues на GitHub")
+                }
+                Spacer(Modifier.height(24.dp))
             }
         }
     }
@@ -144,37 +241,3 @@ fun SettingsScreen(onBack: () -> Unit) {
 
 private fun appVersion(context: android.content.Context): String =
     runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "—"
-
-@Composable
-private fun Header(text: String, icon: androidx.compose.ui.graphics.vector.ImageVector) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        androidx.compose.material3.Surface(shape = MaterialTheme.shapes.medium,
-            color = MaterialTheme.colorScheme.secondaryContainer) {
-            Icon(icon, null, tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                modifier = Modifier.padding(10.dp).size(22.dp))
-        }
-        Text(text, style = MaterialTheme.typography.titleLarge)
-    }
-}
-
-@Composable
-private fun SwitchRow(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Switch(checked, onChange)
-    }
-}
-
-@Composable
-private fun <T> Choice(title: String, values: List<T>, selected: T, label: (T) -> String, onSelect: (T) -> Unit) {
-    Column {
-        Text(title, style = MaterialTheme.typography.bodyLarge)
-        Spacer(Modifier.height(6.dp))
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            values.forEach { v -> FilterChip(v == selected, { onSelect(v) }, { Text(label(v)) }) }
-        }
-    }
-}

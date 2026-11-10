@@ -2,6 +2,7 @@ package com.pandortools.notecreate.ink
 
 import android.graphics.Bitmap
 import android.graphics.BitmapShader
+import android.graphics.BlurMaskFilter
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -14,6 +15,9 @@ import com.pandortools.notecreate.data.MM_TO_PT
 import com.pandortools.notecreate.data.Notebook
 import com.pandortools.notecreate.data.NotebookTemplate
 import com.pandortools.notecreate.data.PageData
+import com.pandortools.notecreate.data.PageLayers
+import com.pandortools.notecreate.data.PageTemplate
+import com.pandortools.notecreate.data.TextBlock
 import com.pandortools.notecreate.data.PaperType
 import com.pandortools.notecreate.data.PenType
 import com.pandortools.notecreate.data.Stroke
@@ -54,6 +58,9 @@ class PageRenderer {
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
+    }
+    private val watercolorPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND
     }
     private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val bitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
@@ -149,6 +156,78 @@ class PageRenderer {
         canvas.restore()
     }
 
+    fun drawText(canvas: Canvas, item: TextBlock) {
+        val oldType = textPaint.typeface
+        val oldSize = textPaint.textSize
+        val oldColor = textPaint.color
+        textPaint.typeface = when (item.fontFamily.lowercase()) {
+            "serif" -> Typeface.create(Typeface.SERIF, Typeface.NORMAL)
+            "mono" -> Typeface.create(Typeface.MONOSPACE, Typeface.NORMAL)
+            else -> Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL)
+        }
+        textPaint.textSize = item.fontSize.coerceIn(6f, 144f)
+        textPaint.color = item.color
+        val lineHeight = textPaint.fontSpacing
+        item.text.split('\n').forEachIndexed { index, line ->
+            canvas.drawText(line, item.x, item.y + index * lineHeight, textPaint)
+        }
+        textPaint.typeface = oldType; textPaint.textSize = oldSize; textPaint.color = oldColor
+    }
+
+    fun drawTemplate(canvas: Canvas, page: PageData, nb: Notebook) {
+        val w = nb.pageWidth; val h = nb.pageHeight; val margin = 14f * MM_TO_PT
+        val dark = isDark(nb.paperColor)
+        val ink = if (dark) Color.argb(170, 255, 255, 255) else Color.argb(185, 37, 64, 91)
+        textPaint.typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
+        textPaint.color = ink; textPaint.textSize = 10f
+        linePaint.color = if (dark) Color.argb(75, 255, 255, 255) else Color.argb(75, 46, 76, 107)
+        linePaint.strokeWidth = 0.8f
+        when (page.template) {
+            PageTemplate.NONE -> Unit
+            PageTemplate.HABITS -> {
+                canvas.drawText("ТРЕКЕР ПРИВЫЧЕК", margin, margin + 12f, textPaint)
+                val top = margin + 28f; val row = 28f; val col = (w - margin * 2) / 8f
+                listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс").forEachIndexed { i, label ->
+                    canvas.drawText(label, margin + (i + 1) * col + 3f, top - 5f, textPaint)
+                }
+                for (r in 0..9) canvas.drawLine(margin, top + r * row, w - margin, top + r * row, linePaint)
+                for (c in 0..8) canvas.drawLine(margin + c * col, top, margin + c * col, top + row * 9, linePaint)
+                textPaint.textSize = 8f
+                for (r in 0 until 9) canvas.drawText("Привычка ${r + 1}", margin + 3f, top + row * (r + 0.66f), textPaint)
+            }
+            PageTemplate.WEEK -> {
+                canvas.drawText("ПЛАН НА НЕДЕЛЮ", margin, margin + 12f, textPaint)
+                val days = listOf("ПОНЕДЕЛЬНИК", "ВТОРНИК", "СРЕДА", "ЧЕТВЕРГ", "ПЯТНИЦА", "СУББОТА", "ВОСКРЕСЕНЬЕ")
+                val row = (h - margin * 2 - 26f) / days.size
+                days.forEachIndexed { i, day ->
+                    val y = margin + 32f + i * row
+                    textPaint.textSize = 8f; canvas.drawText(day, margin + 3f, y + 10f, textPaint)
+                    canvas.drawLine(margin, y + 16f, w - margin, y + 16f, linePaint)
+                    canvas.drawLine(margin, y + row - 2f, w - margin, y + row - 2f, linePaint)
+                }
+            }
+            PageTemplate.TODO -> {
+                canvas.drawText("СПИСОК ДЕЛ", margin, margin + 12f, textPaint)
+                var y = margin + 38f
+                while (y < h - margin) {
+                    canvas.drawRect(margin, y - 9f, margin + 10f, y + 1f, linePaint)
+                    canvas.drawLine(margin + 18f, y, w - margin, y, linePaint)
+                    y += 28f
+                }
+            }
+            PageTemplate.DAY_REVIEW -> {
+                canvas.drawText("ИТОГИ ДНЯ", margin, margin + 12f, textPaint)
+                val prompts = listOf("Лучший момент дня", "Что получилось хорошо", "Что хочу улучшить", "За что благодарен")
+                val section = (h - margin * 2 - 28f) / prompts.size
+                prompts.forEachIndexed { i, prompt ->
+                    val y = margin + 32f + i * section
+                    textPaint.textSize = 9f; canvas.drawText(prompt, margin, y, textPaint)
+                    for (line in 1..3) canvas.drawLine(margin, y + line * 22f, w - margin, y + line * 22f, linePaint)
+                }
+            }
+        }
+    }
+
     // ---------- Штрихи ----------
 
     fun drawStroke(canvas: Canvas, s: Stroke) {
@@ -156,6 +235,7 @@ class PageRenderer {
         if (n == 0) return
         when (s.pen) {
             PenType.HIGHLIGHTER -> drawHighlighter(canvas, s)
+            PenType.WATERCOLOR -> drawWatercolor(canvas, s)
             else -> drawVariable(canvas, s)
         }
     }
@@ -173,6 +253,9 @@ class PageRenderer {
             }
             PenType.PENCIL -> s.width * (0.8f + 0.4f * p) * (1f + 2.2f * s.tilt(i))
             PenType.HIGHLIGHTER -> s.width
+            PenType.WATERCOLOR -> s.width * (0.65f + 0.85f * p) * (1f + 0.5f * s.tilt(i))
+            PenType.INK -> s.width * (0.28f + 1.25f * p) * (1f + 0.35f * s.tilt(i))
+            PenType.TEXTURED -> s.width * (0.7f + 0.55f * p) * (1f + 1.8f * s.tilt(i))
         }
         return if (prev <= 0f) w else prev * 0.55f + w * 0.45f
     }
@@ -181,7 +264,7 @@ class PageRenderer {
         val paint = segPaint
         paint.color = s.color
         paint.shader = null
-        val pencil = s.pen == PenType.PENCIL
+        val pencil = s.pen == PenType.PENCIL || s.pen == PenType.TEXTURED
         if (pencil) paint.shader = grainShader
         var w = -1f
         val n = s.size
@@ -203,6 +286,27 @@ class PageRenderer {
         paint.shader = null
     }
 
+    /** Watercolour-style soft underwash with a defined pigment center. */
+    private fun drawWatercolor(canvas: Canvas, s: Stroke) {
+        if (s.size == 1) {
+            fillPaint.color = Color.argb((Color.alpha(s.color) * 0.28f).toInt(), Color.red(s.color), Color.green(s.color), Color.blue(s.color))
+            canvas.drawCircle(s.x(0), s.y(0), s.width, fillPaint)
+            return
+        }
+        watercolorPaint.color = s.color
+        watercolorPaint.alpha = (Color.alpha(s.color) * 0.14f).toInt()
+        watercolorPaint.strokeWidth = s.width * 2.4f
+        watercolorPaint.maskFilter = BlurMaskFilter(s.width * 0.55f, BlurMaskFilter.Blur.NORMAL)
+        for (i in 1 until s.size) canvas.drawLine(s.x(i - 1), s.y(i - 1), s.x(i), s.y(i), watercolorPaint)
+        watercolorPaint.maskFilter = null
+        watercolorPaint.alpha = (Color.alpha(s.color) * 0.34f).toInt()
+        for (i in 1 until s.size) {
+            watercolorPaint.strokeWidth = s.width * (0.7f + 0.8f * s.pressure(i).coerceIn(0f, 1f))
+            canvas.drawLine(s.x(i - 1), s.y(i - 1), s.x(i), s.y(i), watercolorPaint)
+        }
+        watercolorPaint.alpha = 255
+    }
+
     private fun drawHighlighter(canvas: Canvas, s: Stroke) {
         val path = tmpPath
         path.reset()
@@ -216,7 +320,10 @@ class PageRenderer {
         }
         path.lineTo(s.x(n - 1), s.y(n - 1))
         pathPaint.color = s.color
-        pathPaint.alpha = (Color.alpha(s.color) * 0.38f).toInt()
+        // Старые штрихи хранят непрозрачный цвет — для них прозрачность маркера 38%.
+        // Новые уже несут выбранную прозрачность в альфе цвета, второй раз её не умножаем.
+        val a = Color.alpha(s.color)
+        pathPaint.alpha = if (a >= 255) (255 * 0.38f).toInt() else a
         pathPaint.strokeWidth = s.width
         pathPaint.strokeCap = Paint.Cap.SQUARE
         canvas.drawPath(path, pathPaint)
@@ -232,11 +339,15 @@ class PageRenderer {
         date: Long?,
         images: (ImageItem) -> Bitmap?,
     ) {
-        drawPaper(canvas, nb, date)
-        for (im in page.images) drawImage(canvas, im, images(im))
+        if (page.layer(PageLayers.BACKGROUND)?.visible != false) {
+            drawPaper(canvas, nb, date)
+            drawTemplate(canvas, page, nb)
+        }
+        for (im in page.images) if (page.layer(im.layerId)?.visible != false) drawImage(canvas, im, images(im))
         // Маркер рисуем первым, чтобы он лежал под текстом.
-        for (s in page.strokes) if (s.pen == PenType.HIGHLIGHTER) drawStroke(canvas, s)
-        for (s in page.strokes) if (s.pen != PenType.HIGHLIGHTER) drawStroke(canvas, s)
+        for (s in page.strokes) if (page.layer(s.layerId)?.visible != false && s.pen == PenType.HIGHLIGHTER) drawStroke(canvas, s)
+        for (s in page.strokes) if (page.layer(s.layerId)?.visible != false && s.pen != PenType.HIGHLIGHTER) drawStroke(canvas, s)
+        for (text in page.textBlocks) if (page.layer(text.layerId)?.visible != false) drawText(canvas, text)
     }
 
     /** Отрисовка страницы в битмап заданной ширины (миниатюры, PNG, перелистывание). */

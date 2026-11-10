@@ -47,6 +47,7 @@ fun NotebookCover(
     modifier: Modifier = Modifier,
     seed: Int = title.hashCode(),
     showPages: Boolean = true,
+    showTitle: Boolean = true,
 ) {
     val base = Color(color)
     val dots = remember(seed, material) {
@@ -94,7 +95,7 @@ fun NotebookCover(
                 drawPath(path, Accent)
             }
         }
-        if (title.isNotBlank()) {
+        if (showTitle && title.isNotBlank()) {
             Box(
                 Modifier
                     .align(Alignment.TopCenter)

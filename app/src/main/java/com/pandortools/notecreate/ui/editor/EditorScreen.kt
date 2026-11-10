@@ -1,31 +1,40 @@
-@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 
 package com.pandortools.notecreate.ui.editor
 
 import android.app.Activity
+import android.content.ContextWrapper
 import android.content.ClipboardManager
 import android.content.Context
 import android.graphics.PointF
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -39,36 +48,59 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.FlipToBack
-import androidx.compose.material.icons.filled.FlipToFront
-import androidx.compose.material.icons.filled.FormatColorFill
-import androidx.compose.material.icons.filled.GridView
-import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.LineWeight
+import androidx.compose.material.icons.outlined.AspectRatio
+import androidx.compose.material.icons.outlined.BlurOn
+import androidx.compose.material.icons.outlined.CalendarToday
+import androidx.compose.material.icons.outlined.Bookmark
+import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.ContentPaste
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.DeleteSweep
+import androidx.compose.material.icons.outlined.FlipToBack
+import androidx.compose.material.icons.outlined.FlipToFront
+import androidx.compose.material.icons.outlined.FormatColorFill
+import androidx.compose.material.icons.outlined.Gesture
+import androidx.compose.material.icons.outlined.GridView
+import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.LineWeight
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.LockOpen
+import androidx.compose.material.icons.outlined.NoteAdd
+import androidx.compose.material.icons.outlined.Opacity
+import androidx.compose.material.icons.outlined.OpenWith
+import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material.icons.outlined.PhotoLibrary
+import androidx.compose.material.icons.outlined.PictureAsPdf
+import androidx.compose.material.icons.outlined.RotateRight
+import androidx.compose.material.icons.outlined.Straighten
+import androidx.compose.material.icons.outlined.WaterDrop
+import androidx.compose.material.icons.outlined.Create
+import androidx.compose.material.icons.outlined.Texture
+import androidx.compose.material.icons.outlined.TextFields
+import androidx.compose.material.icons.outlined.Layers
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.material.icons.outlined.TouchApp
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.ZoomOutMap
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
-import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -77,6 +109,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -91,21 +124,40 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
+import androidx.compose.ui.window.PopupProperties
 import androidx.core.content.FileProvider
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.pandortools.notecreate.data.AppGraph
+import com.pandortools.notecreate.data.PageLayers
+import com.pandortools.notecreate.data.PageLayer
+import com.pandortools.notecreate.data.PageTemplate
+import com.pandortools.notecreate.data.TextBlock
 import com.pandortools.notecreate.data.AppSettings
 import com.pandortools.notecreate.data.PenType
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
+import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
 import com.pandortools.notecreate.data.SettingsState
 import com.pandortools.notecreate.ink.EditorTool
 import com.pandortools.notecreate.ink.EraserMode
@@ -115,9 +167,21 @@ import com.pandortools.notecreate.ui.library.NotebookSetupDialog
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlin.math.sin
 
 private data class LongPressInfo(val vx: Float, val vy: Float, val px: Float, val py: Float, val imageId: String?)
+
+/** Какая всплывающая панель открыта у панели инструментов. */
+private enum class ToolPanel { NONE, PEN, ERASER, LASSO, IMAGE, MORE }
+
+private val PEN_PRESETS = listOf(0.8f, 1.2f, 1.8f, 2.6f, 4f)
+private val MARKER_PRESETS = listOf(6f, 10f, 14f, 20f, 28f)
 
 @Composable
 fun EditorScreen(notebookId: String, onBack: () -> Unit) {
@@ -133,6 +197,8 @@ fun EditorScreen(notebookId: String, onBack: () -> Unit) {
     val snackbar = remember { SnackbarHostState() }
 
     var tool by remember { mutableStateOf(EditorTool.PEN) }
+    var rulerVisible by remember { mutableStateOf(false) }
+    var activeLayerId by remember { mutableStateOf(PageLayers.DRAWING) }
     var pen by remember { mutableStateOf(PenType.BALLPOINT) }
     var color by remember { mutableIntStateOf(settings.favoriteColors.firstOrNull() ?: android.graphics.Color.BLACK) }
     var eraserMode by remember { mutableStateOf(EraserMode.AREA) }
@@ -142,18 +208,19 @@ fun EditorScreen(notebookId: String, onBack: () -> Unit) {
     var canRedo by remember { mutableStateOf(false) }
     var selection by remember { mutableStateOf<SelectionInfo?>(null) }
     var longPress by remember { mutableStateOf<LongPressInfo?>(null) }
+    var panel by remember { mutableStateOf(ToolPanel.NONE) }
     var showPicker by remember { mutableStateOf(false) }
     var pickerSlot by remember { mutableIntStateOf(-1) }
-    var showWidth by remember { mutableStateOf(false) }
-    var showImageMenu by remember { mutableStateOf(false) }
-    var showMore by remember { mutableStateOf(false) }
     var showPages by remember { mutableStateOf(false) }
     var showNotebookSettings by remember { mutableStateOf(false) }
     var showDatePicker by remember { mutableStateOf(false) }
+    var showLayerPanel by remember { mutableStateOf(false) }
+    var showTextDialog by remember { mutableStateOf(false) }
+    var showTemplatePicker by remember { mutableStateOf(false) }
     var clipboardChip by remember { mutableStateOf(false) }
 
     val pageView = remember { PageView(context) }
-    val darkDesk = MaterialTheme.colorScheme.background.toArgb()
+    val deskColor = MaterialTheme.colorScheme.surfaceContainer.toArgb()
 
     // ---------- Вставка картинок ----------
 
@@ -189,6 +256,7 @@ fun EditorScreen(notebookId: String, onBack: () -> Unit) {
         val u = cameraUri
         if (ok && u != null) insertUri(u, null)
     }
+    fun openGallery() = pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
     fun openCamera() {
         val dir = File(context.cacheDir, "camera").apply { mkdirs() }
         val f = File(dir, "photo_${System.currentTimeMillis()}.jpg")
@@ -202,6 +270,33 @@ fun EditorScreen(notebookId: String, onBack: () -> Unit) {
     }
     val exportPng = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/png")) { uri ->
         uri?.let { vm.exportPng(context, it) }
+    }
+    val importPdf = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { vm.importPdf(it) }
+    }
+    val scannerOptions = remember {
+        GmsDocumentScannerOptions.Builder()
+            .setGalleryImportAllowed(true)
+            .setPageLimit(100)
+            .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_JPEG, GmsDocumentScannerOptions.RESULT_FORMAT_PDF)
+            .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL)
+            .build()
+    }
+    val documentScanner = remember(scannerOptions) { GmsDocumentScanning.getClient(scannerOptions) }
+    val scannerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val scan = GmsDocumentScanningResult.fromActivityResultIntent(result.data)
+            val pdfUri = scan?.pdf?.uri
+            if (pdfUri != null) vm.importPdf(pdfUri)
+            else scan?.pages?.firstOrNull()?.imageUri?.let { insertUri(it, null) }
+        }
+    }
+    fun openDocumentScanner() {
+        val activity = context.findActivity()
+        if (activity == null) { vm.showMessage("Сканер недоступен") ; return }
+        documentScanner.getStartScanIntent(activity)
+            .addOnSuccessListener { sender -> scannerLauncher.launch(IntentSenderRequest.Builder(sender).build()) }
+            .addOnFailureListener { vm.showMessage("Не удалось открыть сканер документов") }
     }
 
     // Картинка из «Поделиться»
@@ -223,9 +318,8 @@ fun EditorScreen(notebookId: String, onBack: () -> Unit) {
                 Lifecycle.Event.ON_RESUME -> {
                     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     val d = cm.primaryClipDescription
-                    val fresh = d != null && d.hasMimeType("image/*") &&
+                    clipboardChip = d != null && d.hasMimeType("image/*") &&
                         System.currentTimeMillis() - d.timestamp < 3 * 60 * 1000
-                    clipboardChip = fresh
                 }
                 Lifecycle.Event.ON_PAUSE -> vm.flush()
                 else -> Unit
@@ -264,228 +358,288 @@ fun EditorScreen(notebookId: String, onBack: () -> Unit) {
         }
     }
 
-    val currentNb = nb
-    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        if (currentNb != null) {
-            AndroidView(
-                factory = { pageView },
-                modifier = Modifier.fillMaxSize(),
-                update = { v ->
-                    v.notebook = currentNb
-                    v.tool = tool
-                    v.pen = pen
-                    v.color = if (pen == PenType.HIGHLIGHTER) Color(color).copy(alpha = settings.highlighterOpacity).toArgb() else color
-                    v.penWidth = settings.penWidths[pen] ?: pen.defaultWidth
-                    v.eraserMode = eraserMode
-                    v.eraserSize = eraserSize
-                    v.eraseOnlyHighlighter = eraseOnlyHighlighter
-                    v.fingerDraw = settings.fingerDraw
-                    v.smoothing = settings.smoothing
-                    v.turnStyle = settings.pageTurn
-                    v.threeFingerAction = settings.threeFingerAction
-                    v.deskColor = darkDesk
-                    page?.let { p -> v.setPage(p.id, p.data, p.date) }
-                },
-            )
+    /** Нажатие на инструмент: первый раз выбирает, повторно — открывает его настройки. */
+    fun onToolTap(t: EditorTool, p: PenType? = null) {
+        val already = tool == t && (p == null || pen == p)
+        if (already) {
+            panel = when (t) {
+                EditorTool.PEN -> if (panel == ToolPanel.PEN) ToolPanel.NONE else ToolPanel.PEN
+                EditorTool.ERASER -> if (panel == ToolPanel.ERASER) ToolPanel.NONE else ToolPanel.ERASER
+                EditorTool.LASSO -> if (panel == ToolPanel.LASSO) ToolPanel.NONE else ToolPanel.LASSO
+            }
+        } else {
+            tool = t
+            if (p != null) pen = p
+            panel = ToolPanel.NONE
         }
+    }
 
-        // ---------- Верхняя панель ----------
-        Column(
-            Modifier.align(Alignment.TopCenter).safeDrawingPadding().padding(top = 8.dp, start = 12.dp, end = 12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Surface(
-                shape = RoundedCornerShape(28.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                shadowElevation = 6.dp,
-            ) {
-                Row(
-                    Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 6.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    IconButton(onClick = { vm.flush(); onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад") }
-                    TextButton(onClick = { showDatePicker = true }) {
-                        Text(page?.date?.let { java.text.SimpleDateFormat("d MMM yyyy", java.util.Locale("ru")).format(java.util.Date(it)) } ?: "Выбрать дату")
+    fun pickColor(c: Int) {
+        color = c
+        if (tool != EditorTool.PEN) tool = EditorTool.PEN
+    }
+
+    val currentNb = nb
+    val dateText = page?.date?.let { SimpleDateFormat("d MMMM yyyy", Locale("ru")).format(Date(it)) }
+
+    // ---------- Содержимое панели инструментов ----------
+    val toolsPill: @Composable () -> Unit = {
+        Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+            Row(Modifier.padding(horizontal = 6.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                PenType.entries.forEach { p ->
+                    Box {
+                        ToolButton(
+                            icon = penIcon(p), label = p.title,
+                            selected = tool == EditorTool.PEN && pen == p,
+                            indicator = if (tool == EditorTool.PEN && pen == p) Color(color) else null,
+                        ) { onToolTap(EditorTool.PEN, p) }
+                        if (panel == ToolPanel.PEN && tool == EditorTool.PEN && pen == p) {
+                            ToolPopup(onDismiss = { panel = ToolPanel.NONE }) {
+                                PenOptions(p, color, settings, settingsStore,
+                                    onColor = ::pickColor,
+                                    onEditFavorite = { slot -> pickerSlot = slot; showPicker = true; panel = ToolPanel.NONE },
+                                    onMoreColors = { pickerSlot = -1; showPicker = true; panel = ToolPanel.NONE })
+                            }
+                        }
                     }
-                    Bar()
-                    PenType.entries.forEach { p ->
-                        Box {
-                            ToolButton(icon = penIcon(p), label = p.title,
-                                selected = tool == EditorTool.PEN && pen == p) { tool = EditorTool.PEN; pen = p; showWidth = true }
-                            ToolSettingsMenu(showWidth && tool == EditorTool.PEN && pen == p, { showWidth = false },
-                                EditorTool.PEN, p, color, settings, settingsStore,
-                                eraserMode, { eraserMode = it }, eraserSize, { eraserSize = it },
+                }
+                Box {
+                    ToolButton(ToolIcons.Eraser, "Ластик", tool == EditorTool.ERASER) { onToolTap(EditorTool.ERASER) }
+                    if (panel == ToolPanel.ERASER) {
+                        ToolPopup(onDismiss = { panel = ToolPanel.NONE }) {
+                            EraserOptions(eraserMode, { eraserMode = it }, eraserSize, { eraserSize = it },
                                 eraseOnlyHighlighter, { eraseOnlyHighlighter = it })
                         }
                     }
-                    Box {
-                        ToolButton(ToolIcons.Eraser, "Ластик", tool == EditorTool.ERASER) { tool = EditorTool.ERASER; showWidth = true }
-                        ToolSettingsMenu(showWidth && tool == EditorTool.ERASER, { showWidth = false },
-                            EditorTool.ERASER, pen, color, settings, settingsStore,
-                            eraserMode, { eraserMode = it }, eraserSize, { eraserSize = it },
-                            eraseOnlyHighlighter, { eraseOnlyHighlighter = it })
+                }
+                Box {
+                    ToolButton(ToolIcons.Lasso, "Лассо", tool == EditorTool.LASSO) { onToolTap(EditorTool.LASSO) }
+                    if (panel == ToolPanel.LASSO) {
+                        ToolPopup(onDismiss = { panel = ToolPanel.NONE }) { LassoOptions() }
                     }
-                    Box {
-                        ToolButton(ToolIcons.Lasso, "Лассо", tool == EditorTool.LASSO) { tool = EditorTool.LASSO; showWidth = true }
-                        ToolSettingsMenu(showWidth && tool == EditorTool.LASSO, { showWidth = false },
-                            EditorTool.LASSO, pen, color, settings, settingsStore,
-                            eraserMode, { eraserMode = it }, eraserSize, { eraserSize = it },
-                            eraseOnlyHighlighter, { eraseOnlyHighlighter = it })
+                }
+                IconButton(onClick = { rulerVisible = !rulerVisible }) {
+                    Icon(Icons.Outlined.Straighten, if (rulerVisible) "Скрыть линейку" else "Показать линейку",
+                        tint = if (rulerVisible) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+                }
+                PillDivider()
+                Box {
+                    ToolButton(Icons.Outlined.Image, "Вставить картинку", panel == ToolPanel.IMAGE) {
+                        panel = if (panel == ToolPanel.IMAGE) ToolPanel.NONE else ToolPanel.IMAGE
                     }
-                    Bar()
-                    settings.favoriteColors.take(6).forEachIndexed { i, c ->
-                        Box(
-                            Modifier
-                                .padding(horizontal = 3.dp)
-                                .size(28.dp)
-                                .clip(CircleShape)
-                                .background(Color(c))
-                                .border(
-                                    if (c == color) 3.dp else 1.dp,
-                                    if (c == color) MaterialTheme.colorScheme.secondary else Color.Black.copy(alpha = 0.2f),
-                                    CircleShape,
-                                )
-                                .combinedClickable(
-                                    onClick = { color = c; if (tool != EditorTool.PEN) tool = EditorTool.PEN },
-                                    onLongClick = { pickerSlot = i; showPicker = true },
-                                ),
-                        )
+                    DropdownMenu(expanded = panel == ToolPanel.IMAGE, onDismissRequest = { panel = ToolPanel.NONE }) {
+                        MenuItem(Icons.Outlined.PhotoLibrary, "Из галереи") { panel = ToolPanel.NONE; openGallery() }
+                        MenuItem(Icons.Outlined.PhotoCamera, "Снять камерой") { panel = ToolPanel.NONE; openCamera() }
+                        MenuItem(Icons.Outlined.ContentPaste, "Вставить из буфера") { panel = ToolPanel.NONE; pasteFromClipboard(null) }
                     }
-                    IconButton(onClick = { pickerSlot = -1; showPicker = true }) { Icon(Icons.Filled.Palette, "Палитра") }
-                    IconButton(onClick = { showWidth = true }) { Icon(Icons.Filled.LineWeight, "Настройки выбранного инструмента") }
-                    Bar()
-                    Box {
-                        IconButton(onClick = { showImageMenu = true }) { Icon(Icons.Filled.Image, "Картинка") }
-                        DropdownMenu(expanded = showImageMenu, onDismissRequest = { showImageMenu = false }) {
-                            DropdownMenuItem(text = { Text("Из галереи") }, leadingIcon = { Icon(Icons.Outlined.PhotoLibrary, null) },
-                                onClick = {
-                                    showImageMenu = false
-                                    pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                                })
-                            DropdownMenuItem(text = { Text("Снять камерой") }, leadingIcon = { Icon(Icons.Outlined.PhotoCamera, null) },
-                                onClick = { showImageMenu = false; openCamera() })
-                            DropdownMenuItem(text = { Text("Вставить из буфера") }, leadingIcon = { Icon(Icons.Outlined.ContentPaste, null) },
-                                onClick = { showImageMenu = false; pasteFromClipboard(null) })
+                }
+                PillDivider()
+                // Текущий цвет и быстрые цвета
+                CurrentColorButton(Color(color)) { pickerSlot = -1; showPicker = true }
+                settings.favoriteColors.filter { it != color }.take(4).forEach { c ->
+                    val slot = settings.favoriteColors.indexOf(c)
+                    QuickColor(Color(c), onClick = { pickColor(c) }, onLongClick = { pickerSlot = slot; showPicker = true })
+                }
+            }
+        }
+    }
+
+    val actions: @Composable () -> Unit = {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = { pageView.undo() }, enabled = canUndo) { Icon(Icons.AutoMirrored.Filled.Undo, "Отменить") }
+            IconButton(onClick = { pageView.redo() }, enabled = canRedo) { Icon(Icons.AutoMirrored.Filled.Redo, "Повторить") }
+            IconButton(onClick = { vm.flush(); showPages = true }) { Icon(Icons.Outlined.GridView, "Все страницы") }
+            Box {
+                IconButton(onClick = { panel = if (panel == ToolPanel.MORE) ToolPanel.NONE else ToolPanel.MORE }) {
+                    Icon(Icons.Filled.MoreVert, "Ещё")
+                }
+                DropdownMenu(expanded = panel == ToolPanel.MORE, onDismissRequest = { panel = ToolPanel.NONE }) {
+                    MenuItem(Icons.Outlined.NoteAdd, "Новая страница") { panel = ToolPanel.NONE; vm.addPageAfterCurrent() }
+                    MenuItem(Icons.Outlined.ContentCopy, "Дублировать страницу") { panel = ToolPanel.NONE; vm.duplicatePage(index) }
+                    MenuItem(Icons.Outlined.Delete, "Удалить страницу") { panel = ToolPanel.NONE; vm.deletePage(index) }
+                    HorizontalDivider()
+                    MenuItem(Icons.Outlined.CalendarToday, "Дата страницы") { panel = ToolPanel.NONE; showDatePicker = true }
+                    val currentPageId = currentNb?.pages?.getOrNull(index)
+                    val isBookmarked = currentPageId != null && currentPageId in (currentNb?.bookmarks ?: emptySet())
+                    MenuItem(if (isBookmarked) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkBorder,
+                        if (isBookmarked) "Убрать закладку" else "Добавить закладку") {
+                        panel = ToolPanel.NONE; vm.toggleBookmark(index)
+                    }
+                    MenuItem(Icons.Outlined.Tune, "Обложка и бумага") { panel = ToolPanel.NONE; showNotebookSettings = true }
+                    MenuItem(Icons.Outlined.ZoomOutMap, "Вписать страницу") { panel = ToolPanel.NONE; pageView.resetZoom() }
+                    MenuItem(Icons.Outlined.Straighten, if (rulerVisible) "Скрыть линейку" else "Показать линейку") {
+                        panel = ToolPanel.NONE; rulerVisible = !rulerVisible
+                    }
+                    MenuItem(Icons.Outlined.Layers, "Слои страницы") { panel = ToolPanel.NONE; showLayerPanel = true }
+                    MenuItem(Icons.Outlined.TextFields, "Добавить текстовый блок") { panel = ToolPanel.NONE; showTextDialog = true }
+                    MenuItem(Icons.Outlined.Tune, "Шаблон страницы") { panel = ToolPanel.NONE; showTemplatePicker = true }
+                    HorizontalDivider()
+                    MenuItem(Icons.Outlined.PictureAsPdf, "Импортировать PDF") {
+                        panel = ToolPanel.NONE; importPdf.launch(arrayOf("application/pdf"))
+                    }
+                    MenuItem(Icons.Outlined.PhotoCamera, "Сканировать документ") {
+                        panel = ToolPanel.NONE; openDocumentScanner()
+                    }
+                    MenuItem(Icons.Outlined.PictureAsPdf, "Экспорт тетради в PDF") {
+                        panel = ToolPanel.NONE; exportPdf.launch((currentNb?.title ?: "NoteCreate") + ".pdf")
+                    }
+                    MenuItem(Icons.Outlined.Image, "Экспорт страницы в PNG") {
+                        panel = ToolPanel.NONE; exportPng.launch((currentNb?.title ?: "NoteCreate") + " — стр. ${index + 1}.png")
+                    }
+                    HorizontalDivider()
+                    DropdownMenuItem(
+                        text = { Text("Рисовать пальцем") },
+                        leadingIcon = { Icon(Icons.Outlined.TouchApp, null) },
+                        trailingIcon = { Switch(checked = settings.fingerDraw, onCheckedChange = null) },
+                        onClick = { settingsStore.update { it.copy(fingerDraw = !it.fingerDraw) } },
+                    )
+                }
+            }
+        }
+    }
+
+    val titleBlock: @Composable (Modifier) -> Unit = { m ->
+        Column(m) {
+            Text(currentNb?.title ?: "", style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(
+                Modifier.clip(RoundedCornerShape(8.dp)).clickable { showDatePicker = true }.padding(vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Outlined.CalendarToday, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.width(6.dp))
+                Text(dateText ?: "Указать дату", style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+            }
+        }
+    }
+
+    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceContainer)) {
+        // ---------- Верхняя панель ----------
+        Surface(color = MaterialTheme.colorScheme.surface, shadowElevation = 3.dp) {
+            BoxWithConstraints(Modifier.fillMaxWidth().statusBarsPadding()) {
+                if (maxWidth >= 900.dp) {
+                    Row(Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = { vm.flush(); onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "К библиотеке") }
+                            titleBlock(Modifier.weight(1f))
                         }
+                        toolsPill()
+                        Row(Modifier.weight(1f), horizontalArrangement = Arrangement.End) { actions() }
                     }
-                    IconButton(onClick = { pageView.undo() }, enabled = canUndo) { Icon(Icons.AutoMirrored.Filled.Undo, "Отменить") }
-                    IconButton(onClick = { pageView.redo() }, enabled = canRedo) { Icon(Icons.AutoMirrored.Filled.Redo, "Повторить") }
-                    Bar()
-                    IconButton(onClick = { vm.flush(); showPages = true }) { Icon(Icons.Filled.GridView, "Страницы") }
-                    Box {
-                        IconButton(onClick = { showMore = true }) { Icon(Icons.Filled.MoreVert, "Ещё") }
-                        DropdownMenu(expanded = showMore, onDismissRequest = { showMore = false }) {
-                            DropdownMenuItem(text = { Text("Новая страница") }, onClick = { showMore = false; vm.addPageAfterCurrent() })
-                            DropdownMenuItem(text = { Text("Дублировать страницу") }, onClick = { showMore = false; vm.duplicatePage(index) })
-                            DropdownMenuItem(text = { Text("Удалить страницу") }, onClick = { showMore = false; vm.deletePage(index) })
-                            HorizontalDivider()
-                            DropdownMenuItem(text = { Text("Экспорт тетради в PDF") }, onClick = {
-                                showMore = false; exportPdf.launch((currentNb?.title ?: "NoteCreate") + ".pdf")
-                            })
-                            DropdownMenuItem(text = { Text("Экспорт страницы в PNG") }, onClick = {
-                                showMore = false; exportPng.launch((currentNb?.title ?: "NoteCreate") + " — стр. ${index + 1}.png")
-                            })
-                            HorizontalDivider()
-                            DropdownMenuItem(text = { Text("Обложка и бумага") }, onClick = { showMore = false; showNotebookSettings = true })
-                            DropdownMenuItem(text = { Text("Сбросить масштаб") }, onClick = { showMore = false; pageView.resetZoom() })
-                            DropdownMenuItem(
-                                text = { Text("Рисовать пальцем") },
-                                trailingIcon = { Checkbox(settings.fingerDraw, null) },
-                                onClick = { settingsStore.update { it.copy(fingerDraw = !it.fingerDraw) } },
-                            )
+                } else {
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
+                        Row(Modifier.fillMaxWidth().height(56.dp), verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = { vm.flush(); onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "К библиотеке") }
+                            titleBlock(Modifier.weight(1f))
+                            actions()
+                        }
+                        Box(Modifier.fillMaxWidth().padding(bottom = 8.dp), contentAlignment = Alignment.Center) {
+                            Box(Modifier.horizontalScroll(rememberScrollState())) { toolsPill() }
                         }
                     }
                 }
             }
+        }
 
-            // ---------- Панель выделения ----------
-            val sel = selection
-            if (sel != null) {
-                Spacer(Modifier.height(8.dp))
-                Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.primaryContainer, shadowElevation = 4.dp) {
-                    Row(Modifier.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(selectionLabel(sel), style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(horizontal = 8.dp))
-                        if (sel.strokes > 0) IconButton(onClick = { pageView.recolorSelection(color) }) {
-                            Icon(Icons.Filled.FormatColorFill, "Перекрасить в текущий цвет")
-                        }
-                        IconButton(onClick = { pageView.duplicateSelection() }) { Icon(Icons.Filled.ContentCopy, "Дублировать") }
-                        if (sel.images > 0) {
-                            IconButton(onClick = { pageView.bringSelectionToFront() }) { Icon(Icons.Filled.FlipToFront, "Наверх") }
-                            IconButton(onClick = { pageView.sendSelectionToBack() }) { Icon(Icons.Filled.FlipToBack, "Вниз") }
-                        }
-                        if (sel.singleImageLocked != null) IconButton(onClick = { pageView.toggleLockSelection() }) {
-                            Icon(Icons.Filled.Lock, "Закрепить, чтобы писать поверх")
-                        }
-                        IconButton(onClick = { pageView.deleteSelection() }) { Icon(Icons.Filled.Delete, "Удалить") }
-                        IconButton(onClick = { pageView.clearSelection() }) { Icon(Icons.Filled.Check, "Готово") }
-                    }
-                }
-            }
-
-            if (clipboardChip && sel == null) {
-                Spacer(Modifier.height(8.dp))
-                AssistChip(
-                    onClick = { pasteFromClipboard(null) },
-                    label = { Text("Вставить фото из буфера") },
-                    leadingIcon = { Icon(Icons.Outlined.ContentPaste, null, Modifier.size(AssistChipDefaults.IconSize)) },
-                    trailingIcon = {
-                        Icon(Icons.Filled.Close, "Скрыть", Modifier.size(AssistChipDefaults.IconSize).clip(CircleShape)
-                            .combinedClickable(onClick = { clipboardChip = false }))
+        // ---------- Холст ----------
+        Box(Modifier.fillMaxWidth().weight(1f)) {
+            if (currentNb != null) {
+                AndroidView(
+                    factory = { pageView },
+                    modifier = Modifier.fillMaxSize(),
+                    update = { v ->
+                        v.notebook = currentNb
+                        v.tool = tool
+                        v.pen = pen
+                        v.color = if (pen == PenType.HIGHLIGHTER) Color(color).copy(alpha = settings.highlighterOpacity).toArgb() else color
+                        v.penWidth = settings.penWidths[pen] ?: pen.defaultWidth
+                        v.eraserMode = eraserMode
+                        v.eraserSize = eraserSize
+                        v.eraseOnlyHighlighter = eraseOnlyHighlighter
+                        v.fingerDraw = settings.fingerDraw
+                        v.smoothing = settings.smoothing
+                        v.turnStyle = settings.pageTurn
+                        v.threeFingerAction = settings.threeFingerAction
+                        v.rulerVisible = rulerVisible
+                        v.activeLayerId = activeLayerId
+                        v.deskColor = deskColor
+                        page?.let { p -> v.setPage(p.id, p.data, p.date) }
                     },
                 )
             }
-        }
 
-        // ---------- Номер страницы ----------
-        if (currentNb != null) {
-            Surface(
-                modifier = Modifier
-                    .align(if (settings.leftHanded) Alignment.BottomEnd else Alignment.BottomCenter)
-                    .safeDrawingPadding()
-                    .padding(16.dp),
-                shape = RoundedCornerShape(24.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.95f),
-                shadowElevation = 4.dp,
+            Column(
+                Modifier.align(Alignment.TopCenter).padding(top = 12.dp, start = 12.dp, end = 12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { vm.goTo(index - 1) }, enabled = index > 0) { Icon(Icons.Filled.ChevronLeft, "Назад") }
-                    Text("${index + 1} / ${currentNb.pages.size}", style = MaterialTheme.typography.labelLarge)
-                    IconButton(onClick = { vm.goTo(index + 1) }, enabled = index < currentNb.pages.size - 1) {
-                        Icon(Icons.Filled.ChevronRight, "Вперёд")
-                    }
-                    IconButton(onClick = { vm.addPageAfterCurrent() }) { Icon(Icons.Filled.Add, "Новая страница") }
+                val sel = selection
+                if (sel != null) {
+                    SelectionBar(
+                        info = sel,
+                        onRecolor = { pageView.recolorSelection(color) },
+                        onDuplicate = { pageView.duplicateSelection() },
+                        onFront = { pageView.bringSelectionToFront() },
+                        onBack = { pageView.sendSelectionToBack() },
+                        onLock = { pageView.toggleLockSelection() },
+                        onDelete = { pageView.deleteSelection() },
+                        onDone = { pageView.clearSelection() },
+                    )
+                } else if (clipboardChip) {
+                    AssistChip(
+                        onClick = { pasteFromClipboard(null) },
+                        label = { Text("Вставить фото из буфера") },
+                        leadingIcon = { Icon(Icons.Outlined.ContentPaste, null, Modifier.size(AssistChipDefaults.IconSize)) },
+                        trailingIcon = {
+                            Icon(Icons.Filled.Close, "Скрыть", Modifier.size(AssistChipDefaults.IconSize).clip(CircleShape)
+                                .clickable { clipboardChip = false })
+                        },
+                        colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.surface),
+                        elevation = AssistChipDefaults.assistChipElevation(elevation = 3.dp),
+                    )
                 }
             }
-        }
 
-        // ---------- Меню долгого нажатия ----------
-        longPress?.let { lp ->
-            Box(Modifier.offset { IntOffset(lp.vx.roundToInt(), lp.vy.roundToInt()) }.size(1.dp)) {
-                DropdownMenu(expanded = true, onDismissRequest = { longPress = null }) {
-                    val img = lp.imageId?.let { id -> page?.data?.images?.firstOrNull { it.id == id } }
-                    if (img != null) {
-                        if (!img.locked) DropdownMenuItem(text = { Text("Выделить картинку") },
-                            onClick = { longPress = null; pageView.selectImage(img.id) })
-                        DropdownMenuItem(
-                            text = { Text(if (img.locked) "Открепить картинку" else "Закрепить картинку") },
-                            leadingIcon = { Icon(if (img.locked) Icons.Filled.LockOpen else Icons.Filled.Lock, null) },
-                            onClick = { longPress = null; pageView.setImageLocked(img.id, !img.locked) })
-                        DropdownMenuItem(text = { Text("Удалить картинку") }, leadingIcon = { Icon(Icons.Filled.Delete, null) },
-                            onClick = { longPress = null; pageView.deleteImage(img.id) })
-                        HorizontalDivider()
+            // ---------- Номер страницы ----------
+            if (currentNb != null) {
+                PageIndicator(
+                    index = index,
+                    count = currentNb.pages.size,
+                    onPrev = { vm.goTo(index - 1) },
+                    onNext = { vm.goTo(index + 1) },
+                    onOpenAll = { vm.flush(); showPages = true },
+                    onAdd = { vm.addPageAfterCurrent() },
+                    modifier = Modifier
+                        // Подальше от ладони: правше — слева, левше — справа.
+                        .align(if (settings.leftHanded) Alignment.BottomEnd else Alignment.BottomStart)
+                        .navigationBarsPadding()
+                        .padding(16.dp),
+                )
+            }
+
+            // ---------- Меню долгого нажатия ----------
+            longPress?.let { lp ->
+                Box(Modifier.offset { IntOffset(lp.vx.roundToInt(), lp.vy.roundToInt()) }.size(1.dp)) {
+                    DropdownMenu(expanded = true, onDismissRequest = { longPress = null }) {
+                        val img = lp.imageId?.let { id -> page?.data?.images?.firstOrNull { it.id == id } }
+                        if (img != null) {
+                            if (!img.locked) MenuItem(Icons.Outlined.OpenWith, "Выделить картинку") {
+                                longPress = null; pageView.selectImage(img.id)
+                            }
+                            MenuItem(if (img.locked) Icons.Outlined.LockOpen else Icons.Outlined.Lock,
+                                if (img.locked) "Открепить картинку" else "Закрепить картинку") {
+                                longPress = null; pageView.setImageLocked(img.id, !img.locked)
+                            }
+                            MenuItem(Icons.Outlined.Delete, "Удалить картинку") { longPress = null; pageView.deleteImage(img.id) }
+                            HorizontalDivider()
+                        }
+                        MenuItem(Icons.Outlined.ContentPaste, "Вставить") { longPress = null; pasteFromClipboard(PointF(lp.px, lp.py)) }
+                        MenuItem(Icons.Outlined.PhotoLibrary, "Картинка из галереи") { longPress = null; openGallery() }
                     }
-                    DropdownMenuItem(text = { Text("Вставить") }, leadingIcon = { Icon(Icons.Outlined.ContentPaste, null) },
-                        onClick = { longPress = null; pasteFromClipboard(PointF(lp.px, lp.py)) })
-                    DropdownMenuItem(text = { Text("Картинка из галереи") }, leadingIcon = { Icon(Icons.Outlined.PhotoLibrary, null) },
-                        onClick = {
-                            longPress = null
-                            pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                        })
                 }
             }
-        }
 
-        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = 80.dp))
+            SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 80.dp))
+        }
     }
 
     // ---------- Диалоги ----------
@@ -493,8 +647,7 @@ fun EditorScreen(notebookId: String, onBack: () -> Unit) {
         val initial = if (pickerSlot >= 0) settings.favoriteColors.getOrElse(pickerSlot) { color } else color
         ColorPickerDialog(initial = initial, recent = settings.recentColors, onDismiss = { showPicker = false }) { c ->
             showPicker = false
-            color = c
-            if (tool != EditorTool.PEN) tool = EditorTool.PEN
+            pickColor(c)
             settingsStore.pushRecentColor(c)
             if (pickerSlot >= 0) settingsStore.update { s ->
                 s.copy(favoriteColors = s.favoriteColors.toMutableList().also { l -> if (pickerSlot < l.size) l[pickerSlot] = c })
@@ -506,14 +659,12 @@ fun EditorScreen(notebookId: String, onBack: () -> Unit) {
         DatePickerDialog(
             onDismissRequest = { showDatePicker = false },
             confirmButton = {
-                androidx.compose.material3.TextButton(onClick = {
+                TextButton(onClick = {
                     dateState.selectedDateMillis?.let(vm::setPageDate)
                     showDatePicker = false
                 }) { Text("Сохранить") }
             },
-            dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { showDatePicker = false }) { Text("Отмена") }
-            },
+            dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("Отмена") } },
         ) { DatePicker(state = dateState) }
     }
     if (showPages && currentNb != null) {
@@ -534,88 +685,486 @@ fun EditorScreen(notebookId: String, onBack: () -> Unit) {
             vm.applySpec(spec)
         }
     }
+    if (showTextDialog) {
+        TextBlockDialog(color = color, onDismiss = { showTextDialog = false }) { text, size, font ->
+            val center = pageView.visibleCenter()
+            pageView.addTextBlock(TextBlock(java.util.UUID.randomUUID().toString(), text, center.x, center.y,
+                size, color, font, activeLayerId))
+            showTextDialog = false
+        }
+    }
+    if (showLayerPanel && page != null) {
+        LayerPanelDialog(
+            layers = page!!.data.layers,
+            activeLayerId = activeLayerId,
+            onDismiss = { showLayerPanel = false },
+            onActive = { activeLayerId = it },
+            onUpdate = pageView::updateLayer,
+        )
+    }
+    if (showTemplatePicker) {
+        AlertDialog(
+            onDismissRequest = { showTemplatePicker = false },
+            title = { Text("Шаблон страницы") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PageTemplate.entries.forEach { template ->
+                        FilterChip(
+                            selected = page?.data?.template == template,
+                            onClick = { pageView.edit { it.copy(template = template) }; showTemplatePicker = false },
+                            label = { Text(template.title) },
+                        )
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showTemplatePicker = false }) { Text("Закрыть") } },
+        )
+    }
 }
 
+// =====================================================================
+// Кнопки панели
+// =====================================================================
+
 @Composable
-private fun ToolSettingsMenu(
-    expanded: Boolean,
-    onDismiss: () -> Unit,
-    selectedTool: EditorTool,
-    selectedPen: PenType,
-    color: Int,
-    settings: SettingsState,
-    settingsStore: AppSettings,
-    eraserMode: EraserMode,
-    onEraserMode: (EraserMode) -> Unit,
-    eraserSize: Float,
-    onEraserSize: (Float) -> Unit,
-    eraseOnlyHighlighter: Boolean,
-    onEraseOnlyHighlighter: (Boolean) -> Unit,
+private fun ToolButton(
+    icon: ImageVector,
+    label: String,
+    selected: Boolean,
+    indicator: Color? = null,
+    onClick: () -> Unit,
 ) {
-    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp).width(280.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            when (selectedTool) {
-                EditorTool.ERASER -> {
-                    Text("Настройки ластика", style = MaterialTheme.typography.titleSmall)
-                    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(eraserMode == EraserMode.AREA, { onEraserMode(EraserMode.AREA) }, { Text("Частично") })
-                        FilterChip(eraserMode == EraserMode.SOFT, { onEraserMode(EraserMode.SOFT) }, { Text("Мягкий") })
-                        FilterChip(eraserMode == EraserMode.STROKE, { onEraserMode(EraserMode.STROKE) }, { Text("Весь штрих") })
-                    }
-                    Text(when (eraserMode) {
-                        EraserMode.AREA -> "Удаляет участок линии под кончиком."
-                        EraserMode.SOFT -> "Осветляет линию, сохраняя её на листе."
-                        EraserMode.STROKE -> "Удаляет весь штрих при касании."
-                    }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("Размер: ${eraserSize.roundToInt()}", style = MaterialTheme.typography.bodySmall)
-                    Slider(eraserSize, onEraserSize, valueRange = 2f..40f)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Стирать только маркер", Modifier.weight(1f))
-                        Switch(eraseOnlyHighlighter, onEraseOnlyHighlighter)
-                    }
-                }
-                EditorTool.LASSO -> {
-                    Text("Настройки выделения", style = MaterialTheme.typography.titleSmall)
-                    Text("Обведи контуром нужные штрихи или картинку. Перетаскивай выделение для перемещения, нижний маркер — для размера, верхний — для поворота.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                EditorTool.PEN -> {
-                    val width = settings.penWidths[selectedPen] ?: selectedPen.defaultWidth
-                    Text("${selectedPen.title} · толщина ${"%.1f".format(width)}", style = MaterialTheme.typography.titleSmall)
-                    val range = if (selectedPen == PenType.HIGHLIGHTER) 4f..30f else 0.4f..12f
-                    Slider(width, { v -> settingsStore.update { it.copy(penWidths = it.penWidths + (selectedPen to v)) } }, valueRange = range)
-                    if (selectedPen == PenType.HIGHLIGHTER) {
-                        Text("Непрозрачность: ${(settings.highlighterOpacity * 100).roundToInt()}%", style = MaterialTheme.typography.bodySmall)
-                        Slider(settings.highlighterOpacity, { v -> settingsStore.update { it.copy(highlighterOpacity = v) } }, valueRange = 0.08f..0.8f)
-                    }
-                    Box(Modifier.height(36.dp).width(260.dp), contentAlignment = Alignment.Center) {
-                        Box(Modifier.width(220.dp).height((width * 1.4f).coerceIn(1f, 36f).dp)
-                            .clip(RoundedCornerShape(50)).background(Color(color).copy(alpha = if (selectedPen == PenType.HIGHLIGHTER) 0.4f else 1f)))
-                    }
-                    Text("Сглаживание линии: ${(settings.smoothing * 100).roundToInt()}%", style = MaterialTheme.typography.bodySmall)
-                    Slider(settings.smoothing, { v -> settingsStore.update { it.copy(smoothing = v) } }, valueRange = 0f..0.9f)
-                }
-            }
+    val bg = if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
+    val fg = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+    Box(
+        Modifier
+            .padding(horizontal = 2.dp)
+            .size(44.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(bg)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, label, tint = fg, modifier = Modifier.size(22.dp).offset(y = if (indicator != null) (-3).dp else 0.dp))
+        if (indicator != null) {
+            Box(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 6.dp)
+                    .size(width = 16.dp, height = 4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(indicator),
+            )
         }
     }
 }
 
 @Composable
-private fun Bar() {
-    VerticalDivider(Modifier.height(28.dp).padding(horizontal = 4.dp))
+private fun PillDivider() {
+    VerticalDivider(Modifier.height(26.dp).padding(horizontal = 6.dp), color = MaterialTheme.colorScheme.outlineVariant)
 }
 
 @Composable
-private fun ToolButton(icon: ImageVector, label: String, selected: Boolean, onClick: () -> Unit) {
-    IconToggleButton(checked = selected, onCheckedChange = { onClick() }) {
-        Box(
-            Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent),
-            contentAlignment = Alignment.Center,
+private fun CurrentColorButton(color: Color, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .padding(horizontal = 4.dp)
+            .size(34.dp)
+            .clip(CircleShape)
+            .border(2.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f), CircleShape)
+            .padding(4.dp)
+            .clip(CircleShape)
+            .background(color)
+            .clickable(onClick = onClick),
+    )
+}
+
+@Composable
+private fun QuickColor(color: Color, onClick: () -> Unit, onLongClick: () -> Unit) {
+    Box(
+        Modifier
+            .padding(horizontal = 3.dp)
+            .size(24.dp)
+            .clip(CircleShape)
+            .background(color)
+            .border(1.dp, Color.Black.copy(alpha = 0.15f), CircleShape)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+    )
+}
+
+@Composable
+private fun MenuItem(icon: ImageVector, text: String, onClick: () -> Unit) {
+    DropdownMenuItem(text = { Text(text) }, leadingIcon = { Icon(icon, null) }, onClick = onClick)
+}
+
+@Composable
+private fun TextBlockDialog(
+    color: Int,
+    onDismiss: () -> Unit,
+    onAdd: (String, Float, String) -> Unit,
+) {
+    var text by remember { mutableStateOf("") }
+    var size by remember { mutableFloatStateOf(18f) }
+    var font by remember { mutableStateOf("sans") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Текстовый блок") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(value = text, onValueChange = { text = it }, label = { Text("Напечатай текст") }, minLines = 3)
+                Text("Шрифт", style = MaterialTheme.typography.labelLarge)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("sans" to "Без засечек", "serif" to "С засечками", "mono" to "Моно").forEach { (id, label) ->
+                        FilterChip(font == id, { font = id }, { Text(label) })
+                    }
+                }
+                Text("Размер: ${size.toInt()} pt", style = MaterialTheme.typography.bodySmall)
+                Slider(value = size, onValueChange = { size = it }, valueRange = 10f..40f)
+                Text(text, style = MaterialTheme.typography.bodyLarge, color = Color(color), maxLines = 4)
+                Text("Блок появится в центре листа; затем его можно распечатать или экспортировать вместе со страницей.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        confirmButton = { TextButton(enabled = text.isNotBlank(), onClick = { onAdd(text.trim(), size, font) }) { Text("Добавить") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
+    )
+}
+
+@Composable
+private fun LayerPanelDialog(
+    layers: List<PageLayer>,
+    activeLayerId: String,
+    onDismiss: () -> Unit,
+    onActive: (String) -> Unit,
+    onUpdate: (PageLayer) -> Unit,
+) {
+    var newName by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Слои страницы") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Выбери слой для письма. Скрытые слои не отображаются, заблокированные защищены от изменений.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                layers.forEach { layer ->
+                    Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            if (layer.id != PageLayers.BACKGROUND) {
+                                androidx.compose.material3.RadioButton(selected = activeLayerId == layer.id, onClick = { onActive(layer.id) })
+                            } else Spacer(Modifier.size(48.dp))
+                            Text(layer.name, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                            IconButton(onClick = { onUpdate(layer.copy(visible = !layer.visible)) }) {
+                                Icon(if (layer.visible) Icons.Outlined.Visibility else Icons.Outlined.VisibilityOff,
+                                    if (layer.visible) "Скрыть слой" else "Показать слой")
+                            }
+                            IconButton(onClick = { onUpdate(layer.copy(locked = !layer.locked)) }) {
+                                Icon(if (layer.locked) Icons.Outlined.Lock else Icons.Outlined.LockOpen,
+                                    if (layer.locked) "Разблокировать слой" else "Заблокировать слой")
+                            }
+                        }
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(value = newName, onValueChange = { newName = it }, label = { Text("Новый слой") }, singleLine = true,
+                        modifier = Modifier.weight(1f))
+                    FilledTonalIconButton(onClick = {
+                        val name = newName.trim()
+                        if (name.isNotEmpty()) {
+                            val layer = PageLayer(java.util.UUID.randomUUID().toString(), name)
+                            onUpdate(layer); onActive(layer.id); newName = ""
+                        }
+                    }, enabled = newName.isNotBlank()) { Icon(Icons.Filled.Add, "Создать слой") }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Готово") } },
+    )
+}
+
+// =====================================================================
+// Всплывающие настройки инструментов
+// =====================================================================
+
+/** Открывает карточку под кнопкой и не даёт ей выйти за край экрана. */
+private class BelowAnchorPositionProvider(private val gap: Int, private val margin: Int) : PopupPositionProvider {
+    override fun calculatePosition(
+        anchorBounds: IntRect,
+        windowSize: IntSize,
+        layoutDirection: LayoutDirection,
+        popupContentSize: IntSize,
+    ): IntOffset {
+        val maxX = (windowSize.width - popupContentSize.width - margin).coerceAtLeast(margin)
+        val x = (anchorBounds.center.x - popupContentSize.width / 2).coerceIn(margin, maxX)
+        var y = anchorBounds.bottom + gap
+        if (y + popupContentSize.height > windowSize.height - margin) {
+            y = (anchorBounds.top - gap - popupContentSize.height).coerceAtLeast(margin)
+        }
+        return IntOffset(x, y)
+    }
+}
+
+@Composable
+private fun ToolPopup(onDismiss: () -> Unit, content: @Composable () -> Unit) {
+    val density = LocalDensity.current
+    val provider = remember(density) {
+        with(density) { BelowAnchorPositionProvider(10.dp.roundToPx(), 12.dp.roundToPx()) }
+    }
+    Popup(popupPositionProvider = provider, onDismissRequest = onDismiss, properties = PopupProperties(focusable = true)) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 2.dp,
+            shadowElevation = 12.dp,
+            modifier = Modifier.width(320.dp),
         ) {
-            Icon(icon, label, tint = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface)
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) { content() }
+        }
+    }
+}
+
+@Composable
+private fun PopupHeader(icon: ImageVector, title: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
+            Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) {
+                Icon(icon, null, tint = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.size(20.dp))
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        Text(title, style = MaterialTheme.typography.titleMedium)
+    }
+}
+
+/** Подпись параметра: иконка, название и значение справа. */
+@Composable
+private fun OptionLabel(icon: ImageVector, title: String, value: String? = null) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.width(8.dp))
+        Text(title, style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+        if (value != null) Text(value, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun PenOptions(
+    pen: PenType,
+    color: Int,
+    settings: SettingsState,
+    store: AppSettings,
+    onColor: (Int) -> Unit,
+    onEditFavorite: (Int) -> Unit,
+    onMoreColors: () -> Unit,
+) {
+    val marker = pen == PenType.HIGHLIGHTER
+    val width = settings.penWidths[pen] ?: pen.defaultWidth
+    val presets = if (marker) MARKER_PRESETS else PEN_PRESETS
+    val range = if (marker) 4f..30f else 0.4f..12f
+    fun setWidth(v: Float) = store.update { it.copy(penWidths = it.penWidths + (pen to v)) }
+
+    PopupHeader(penIcon(pen), pen.title)
+    StrokePreview(pen, Color(color), width, if (marker) settings.highlighterOpacity else 1f)
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        OptionLabel(Icons.Outlined.LineWeight, "Толщина", "%.1f".format(width))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            presets.forEachIndexed { i, preset ->
+                val active = abs(width - preset) < 0.05f
+                Box(
+                    Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(if (active) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
+                        .clickable { setWidth(preset) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    val d = (6 + i * 4).dp
+                    Box(Modifier.size(d).clip(CircleShape).background(Color(color).copy(alpha = if (marker) 0.5f else 1f)))
+                }
+            }
+        }
+        Slider(value = width.coerceIn(range.start, range.endInclusive), onValueChange = ::setWidth, valueRange = range)
+    }
+
+    if (marker) {
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            OptionLabel(Icons.Outlined.Opacity, "Прозрачность", "${(settings.highlighterOpacity * 100).roundToInt()}%")
+            Slider(settings.highlighterOpacity, { v -> store.update { it.copy(highlighterOpacity = v) } }, valueRange = 0.08f..0.8f)
+        }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        OptionLabel(Icons.Outlined.Gesture, "Сглаживание", "${(settings.smoothing * 100).roundToInt()}%")
+        Slider(settings.smoothing, { v -> store.update { it.copy(smoothing = v) } }, valueRange = 0f..0.9f)
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        OptionLabel(Icons.Outlined.Palette, "Цвет")
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            settings.favoriteColors.forEachIndexed { slot, c ->
+                val active = c == color
+                Box(
+                    Modifier
+                        .size(30.dp)
+                        .clip(CircleShape)
+                        .background(Color(c))
+                        .border(if (active) 3.dp else 1.dp,
+                            if (active) MaterialTheme.colorScheme.primary else Color.Black.copy(alpha = 0.15f), CircleShape)
+                        .combinedClickable(onClick = { onColor(c) }, onLongClick = { onEditFavorite(slot) }),
+                )
+            }
+            FilledTonalIconButton(onClick = onMoreColors, modifier = Modifier.size(30.dp)) {
+                Icon(Icons.Filled.Add, "Другой цвет", Modifier.size(18.dp))
+            }
+        }
+        Text("Удерживай кружок, чтобы заменить цвет", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** Образец линии выбранным пером. */
+@Composable
+private fun StrokePreview(pen: PenType, color: Color, width: Float, alpha: Float) {
+    Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+        Canvas(Modifier.fillMaxWidth().height(56.dp)) {
+            val path = Path()
+            val w = size.width - 48f
+            for (i in 0..60) {
+                val t = i / 60f
+                val x = 24f + w * t
+                val y = size.height / 2f + sin(t * 2 * PI).toFloat() * size.height * 0.22f
+                if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            }
+            val px = (width * density * 0.9f).coerceIn(1.5f, size.height * 0.7f)
+            drawPath(path, color.copy(alpha = alpha), style = Stroke(width = px, cap = if (pen == PenType.HIGHLIGHTER) StrokeCap.Square else StrokeCap.Round))
+        }
+    }
+}
+
+@Composable
+private fun EraserOptions(
+    mode: EraserMode,
+    onMode: (EraserMode) -> Unit,
+    size: Float,
+    onSize: (Float) -> Unit,
+    onlyHighlighter: Boolean,
+    onOnlyHighlighter: (Boolean) -> Unit,
+) {
+    PopupHeader(ToolIcons.Eraser, "Ластик")
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        EraserModeTile(ToolIcons.Eraser, "Частично", mode == EraserMode.AREA, Modifier.weight(1f)) { onMode(EraserMode.AREA) }
+        EraserModeTile(Icons.Outlined.BlurOn, "Мягкий", mode == EraserMode.SOFT, Modifier.weight(1f)) { onMode(EraserMode.SOFT) }
+        EraserModeTile(Icons.Outlined.DeleteSweep, "Штрих", mode == EraserMode.STROKE, Modifier.weight(1f)) { onMode(EraserMode.STROKE) }
+    }
+    Text(
+        when (mode) {
+            EraserMode.AREA -> "Стирает только то, что под ластиком."
+            EraserMode.SOFT -> "Делает линию бледнее. Проведи ещё раз, чтобы осветлить сильнее."
+            EraserMode.STROKE -> "Удаляет линию целиком одним касанием."
+        },
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        OptionLabel(Icons.Outlined.LineWeight, "Размер", size.roundToInt().toString())
+        Slider(size, onSize, valueRange = 2f..40f)
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(ToolIcons.Highlighter, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.width(8.dp))
+        Text("Стирать только маркер", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+        Switch(checked = onlyHighlighter, onCheckedChange = onOnlyHighlighter)
+    }
+}
+
+@Composable
+private fun EraserModeTile(icon: ImageVector, label: String, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(14.dp),
+        color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        modifier = modifier,
+    ) {
+        Column(Modifier.padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(icon, null, Modifier.size(22.dp),
+                tint = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(6.dp))
+            Text(label, style = MaterialTheme.typography.labelMedium)
+        }
+    }
+}
+
+@Composable
+private fun LassoOptions() {
+    PopupHeader(ToolIcons.Lasso, "Лассо")
+    LassoTip(ToolIcons.Lasso, "Обведи штрихи или картинку")
+    LassoTip(Icons.Outlined.OpenWith, "Тяни выделение, чтобы переместить")
+    LassoTip(Icons.Outlined.AspectRatio, "Нижний кружок меняет размер")
+    LassoTip(Icons.Outlined.RotateRight, "Верхний кружок поворачивает")
+}
+
+@Composable
+private fun LassoTip(icon: ImageVector, text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.width(12.dp))
+        Text(text, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+// =====================================================================
+// Панель выделения и номер страницы
+// =====================================================================
+
+@Composable
+private fun SelectionBar(
+    info: SelectionInfo,
+    onRecolor: () -> Unit,
+    onDuplicate: () -> Unit,
+    onFront: () -> Unit,
+    onBack: () -> Unit,
+    onLock: () -> Unit,
+    onDelete: () -> Unit,
+    onDone: () -> Unit,
+) {
+    Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface, shadowElevation = 6.dp) {
+        Row(Modifier.padding(horizontal = 6.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(selectionLabel(info), style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.padding(start = 10.dp, end = 6.dp))
+            if (info.strokes > 0) IconButton(onClick = onRecolor) { Icon(Icons.Outlined.FormatColorFill, "Перекрасить в текущий цвет") }
+            IconButton(onClick = onDuplicate) { Icon(Icons.Outlined.ContentCopy, "Дублировать") }
+            if (info.images > 0) {
+                IconButton(onClick = onFront) { Icon(Icons.Outlined.FlipToFront, "На передний план") }
+                IconButton(onClick = onBack) { Icon(Icons.Outlined.FlipToBack, "На задний план") }
+            }
+            if (info.singleImageLocked != null) IconButton(onClick = onLock) { Icon(Icons.Outlined.Lock, "Закрепить, чтобы писать поверх") }
+            IconButton(onClick = onDelete) { Icon(Icons.Outlined.Delete, "Удалить", tint = MaterialTheme.colorScheme.error) }
+            FilledTonalIconButton(onClick = onDone) { Icon(Icons.Filled.Check, "Готово") }
+        }
+    }
+}
+
+@Composable
+private fun PageIndicator(
+    index: Int,
+    count: Int,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
+    onOpenAll: () -> Unit,
+    onAdd: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(modifier, shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surface, shadowElevation = 4.dp) {
+        Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onPrev, enabled = index > 0) { Icon(Icons.Filled.ChevronLeft, "Предыдущая страница") }
+            Text(
+                "${index + 1} из $count",
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onOpenAll).padding(horizontal = 8.dp, vertical = 6.dp),
+            )
+            IconButton(onClick = onNext, enabled = index < count - 1) { Icon(Icons.Filled.ChevronRight, "Следующая страница") }
+            VerticalDivider(Modifier.height(24.dp), color = MaterialTheme.colorScheme.outlineVariant)
+            IconButton(onClick = onAdd) { Icon(Icons.Outlined.NoteAdd, "Новая страница") }
         }
     }
 }
@@ -625,11 +1174,20 @@ private fun penIcon(p: PenType): ImageVector = when (p) {
     PenType.FOUNTAIN -> ToolIcons.Fountain
     PenType.PENCIL -> ToolIcons.Pencil
     PenType.HIGHLIGHTER -> ToolIcons.Highlighter
+    PenType.WATERCOLOR -> Icons.Outlined.WaterDrop
+    PenType.INK -> Icons.Outlined.Create
+    PenType.TEXTURED -> Icons.Outlined.Texture
 }
 
 private fun selectionLabel(s: SelectionInfo): String {
     val parts = ArrayList<String>()
-    if (s.strokes > 0) parts += "штрихов: ${s.strokes}"
-    if (s.images > 0) parts += "картинок: ${s.images}"
-    return parts.joinToString(", ")
+    if (s.strokes > 0) parts += "Штрихи: ${s.strokes}"
+    if (s.images > 0) parts += "Фото: ${s.images}"
+    return parts.joinToString(" · ")
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }

@@ -14,6 +14,7 @@ import com.pandortools.notecreate.data.NotebookRepository
 import com.pandortools.notecreate.data.NotebookSpec
 import com.pandortools.notecreate.data.NotebookTemplate
 import com.pandortools.notecreate.data.PageData
+import com.pandortools.notecreate.data.PageLayers
 import com.pandortools.notecreate.ink.PageRenderer
 import com.pandortools.notecreate.ink.TurnTarget
 import kotlinx.coroutines.CoroutineScope
@@ -129,6 +130,46 @@ class EditorViewModel(private val notebookId: String) : ViewModel() {
         viewModelScope.launch {
             updateNotebook { it.copy(pageDates = it.pageDates + (current.id to dateMillis)) }
         }
+    }
+
+    fun toggleBookmark(pageIndex: Int = _index.value) {
+        val nb = _notebook.value ?: return
+        val id = nb.pages.getOrNull(pageIndex) ?: return
+        saveScope.launch {
+            updateNotebook { current ->
+                val marks = current.bookmarks.toMutableSet()
+                if (!marks.add(id)) marks.remove(id)
+                current.copy(bookmarks = marks, updatedAt = System.currentTimeMillis())
+            }
+        }
+    }
+
+    fun importPdf(uri: Uri) = viewModelScope.launch {
+        flush()
+        val nb = _notebook.value ?: return@launch
+        val imported = repo.importPdfPages(nb, uri)
+        if (imported.isEmpty()) { _message.value = "Не удалось прочитать PDF"; return@launch }
+        val first = _index.value + 1
+        val ids = imported.indices.map { UUID.randomUUID().toString().substring(0, 13) }
+        val dates = ids.associateWith { System.currentTimeMillis() }
+        val updated = updateNotebook { current ->
+            val pages = current.pages.toMutableList().apply { addAll(first.coerceIn(0, size), ids) }
+            current.copy(pages = pages, pageDates = current.pageDates + dates, lastPage = first,
+                updatedAt = System.currentTimeMillis())
+        } ?: return@launch
+        imported.forEachIndexed { i, image ->
+            val data = PageData(images = listOf(ImageItem(
+                id = UUID.randomUUID().toString(), fileName = image.fileName,
+                x = 0f, y = 0f, w = updated.pageWidth, h = updated.pageHeight,
+                locked = true, layerId = PageLayers.BACKGROUND,
+            )))
+            edited[ids[i]] = data
+            repo.savePage(updated, ids[i], data)
+        }
+        _index.value = first
+        _page.value = LoadedPage(ids.first(), edited.getValue(ids.first()), dates.getValue(ids.first()))
+        _message.value = "Импортировано страниц PDF: ${imported.size}"
+        preloadNeighbors()
     }
 
     private fun rememberLastPage(i: Int) {

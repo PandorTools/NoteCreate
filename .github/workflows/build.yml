@@ -1,4 +1,4 @@
-name: Build APK
+name: Build and release APK
 
 on:
   push:
@@ -20,15 +20,53 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
-      - name: Build
+      - name: Configure stable signing key
+        env:
+          NOTE_CREATE_KEYSTORE: ${{ secrets.NOTE_CREATE_KEYSTORE }}
+          NOTE_CREATE_STORE_PASSWORD: ${{ secrets.NOTE_CREATE_STORE_PASSWORD }}
+          NOTE_CREATE_KEY_ALIAS: ${{ secrets.NOTE_CREATE_KEY_ALIAS }}
+          NOTE_CREATE_KEY_PASSWORD: ${{ secrets.NOTE_CREATE_KEY_PASSWORD }}
+        run: |
+          KEY_PATH="$RUNNER_TEMP/notecreate-release.keystore"
+          if [ -n "$NOTE_CREATE_KEYSTORE" ]; then
+            echo "$NOTE_CREATE_KEYSTORE" | base64 --decode > "$KEY_PATH"
+          else
+            if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+              echo "Stable signing secrets are required for release tags" >&2
+              exit 1
+            fi
+            keytool -genkeypair -v -keystore "$KEY_PATH" -storepass android -keypass android \
+              -alias ci-temporary -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=NoteCreate CI, OU=Build, O=NoteCreate, L=Unknown, ST=Unknown, C=US"
+            NOTE_CREATE_STORE_PASSWORD=android
+            NOTE_CREATE_KEY_ALIAS=ci-temporary
+            NOTE_CREATE_KEY_PASSWORD=android
+          fi
+          echo "NOTE_CREATE_KEYSTORE_PATH=$KEY_PATH" >> "$GITHUB_ENV"
+          echo "NOTE_CREATE_STORE_PASSWORD=$NOTE_CREATE_STORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "NOTE_CREATE_KEY_ALIAS=$NOTE_CREATE_KEY_ALIAS" >> "$GITHUB_ENV"
+          echo "NOTE_CREATE_KEY_PASSWORD=$NOTE_CREATE_KEY_PASSWORD" >> "$GITHUB_ENV"
+      - name: Build APKs
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug assembleRelease --stacktrace
-      - name: Rename APK
+      - name: Prepare release asset
         run: |
           mkdir -p out
-          cp app/build/outputs/apk/release/app-release.apk out/NoteCreate-${{ github.ref_name }}.apk
+          cp app/build/outputs/apk/release/app-release.apk "out/NoteCreate-${{ github.ref_type == 'tag' && github.ref_name || 'ci' }}.apk"
       - uses: actions/upload-artifact@v4
         with:
           name: NoteCreate-ci-build
           path: out/*.apk
+      - name: Prepare version release notes
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v heading="## ${version}" '$0 == heading { found=1; next } found && /^## / { exit } found { print }' CHANGELOG.md > out/release-notes.md
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: out/*.apk
+          body_path: out/release-notes.md
+          make_latest: true

@@ -27,6 +27,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.ColorLens
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -86,26 +89,32 @@ fun ColorPickerDialog(initial: Int, recent: List<Int>, onDismiss: () -> Unit, on
         ) {
             Column(Modifier.padding(20.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Было → стало: исходный цвет слева, новый справа
+                    Row(Modifier.clip(RoundedCornerShape(14.dp)).border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(14.dp))) {
+                        Box(Modifier.size(width = 28.dp, height = 44.dp).background(Color(initial)))
+                        Box(Modifier.size(width = 44.dp, height = 44.dp).background(Color(current)))
+                    }
+                    Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
-                        Text("Цвет инструмента", style = MaterialTheme.typography.headlineSmall)
-                        Text("Выбери оттенок или готовый цвет", style = MaterialTheme.typography.bodySmall,
+                        Text("Цвет", style = MaterialTheme.typography.titleLarge)
+                        Text("#${String.format("%06X", current and 0xFFFFFF)}", style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, "Закрыть") }
                 }
-                Spacer(Modifier.height(10.dp))
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Box(Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(Color(current))
-                        .border(2.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(14.dp)))
-                    Column {
-                        Text("Текущий цвет", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("#${String.format("%06X", current and 0xFFFFFF)}", style = MaterialTheme.typography.titleSmall)
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                TabRow(selectedTabIndex = section) {
-                    listOf("Подбор", "Наборы", "Недавние").forEachIndexed { index, label ->
-                        Tab(selected = section == index, onClick = { section = index }, text = { Text(label) })
+                Spacer(Modifier.height(12.dp))
+                TabRow(selectedTabIndex = section, containerColor = Color.Transparent) {
+                    listOf(
+                        "Спектр" to Icons.Outlined.Tune,
+                        "Наборы" to Icons.Outlined.ColorLens,
+                        "Недавние" to Icons.Outlined.History,
+                    ).forEachIndexed { index, (label, icon) ->
+                        Tab(
+                            selected = section == index,
+                            onClick = { section = index },
+                            text = { Text(label) },
+                            icon = { Icon(icon, null, Modifier.size(20.dp)) },
+                        )
                     }
                 }
                 Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(top = 16.dp),
@@ -161,7 +170,6 @@ fun ColorPickerDialog(initial: Int, recent: List<Int>, onDismiss: () -> Unit, on
                             }, prefix = { Text("#") }, singleLine = true, label = { Text("HEX") }, modifier = Modifier.fillMaxWidth())
                         }
                         1 -> {
-                            Text("Готовые сочетания", style = MaterialTheme.typography.titleMedium)
                             Palette.presets.forEach { (name, colors) ->
                                 Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
                                     Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -174,8 +182,8 @@ fun ColorPickerDialog(initial: Int, recent: List<Int>, onDismiss: () -> Unit, on
                             }
                         }
                         else -> {
-                            Text("Недавно выбранные", style = MaterialTheme.typography.titleMedium)
-                            if (recent.isEmpty()) Text("Здесь появятся цвета, которые ты выберешь.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (recent.isEmpty()) Text("Пока пусто — здесь будут цвета, которые ты выбирал.",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
                             else FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 recent.forEach { c -> ColorDot(c, c == current, 42) { setColor(c) } }
                             }
@@ -185,7 +193,7 @@ fun ColorPickerDialog(initial: Int, recent: List<Int>, onDismiss: () -> Unit, on
                 Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.End) {
                     TextButton(onClick = onDismiss) { Text("Отмена") }
                     Spacer(Modifier.width(8.dp))
-                    Button(onClick = { onPick(current) }) { Text("Выбрать цвет") }
+                    Button(onClick = { onPick(current) }) { Text("Готово") }
                 }
             }
         }
