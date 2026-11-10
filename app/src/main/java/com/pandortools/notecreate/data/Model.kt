@@ -109,6 +109,9 @@ enum class PageFormat(val title: String, val widthMm: Float, val heightMm: Float
     B5("B5", 176f, 250f),
     LETTER("Letter", 216f, 279f),
     SCREEN("По экрану", 200f, 300f),
+    POSTCARD("Открытка", 100f, 150f),
+    WIDE("Широкий", 280f, 200f),
+    CUSTOM("Свой размер", 210f, 297f),
 }
 
 enum class Orientation(val title: String) { PORTRAIT("Портрет"), LANDSCAPE("Ландшафт") }
@@ -133,6 +136,8 @@ data class Notebook(
     val paperColor: Int,
     val format: PageFormat = PageFormat.A5,
     val orientation: Orientation = Orientation.PORTRAIT,
+    val customWidthMm: Float? = null,
+    val customHeightMm: Float? = null,
     /** Идентификаторы страниц по порядку. */
     val pages: List<String> = emptyList(),
     /** Дата каждой страницы (для дневника), по id. */
@@ -144,9 +149,9 @@ data class Notebook(
     val deletedAt: Long? = null,
 ) {
     val pageWidth: Float
-        get() = (if (orientation == Orientation.PORTRAIT) format.widthMm else format.heightMm) * MM_TO_PT
+        get() = (if (orientation == Orientation.PORTRAIT) (customWidthMm ?: format.widthMm) else (customHeightMm ?: format.heightMm)) * MM_TO_PT
     val pageHeight: Float
-        get() = (if (orientation == Orientation.PORTRAIT) format.heightMm else format.widthMm) * MM_TO_PT
+        get() = (if (orientation == Orientation.PORTRAIT) (customHeightMm ?: format.heightMm) else (customWidthMm ?: format.widthMm)) * MM_TO_PT
     val aspect: Float get() = pageWidth / pageHeight
 }
 
@@ -161,6 +166,8 @@ data class NotebookSpec(
     val paperColor: Int,
     val format: PageFormat,
     val orientation: Orientation,
+    val customWidthMm: Float? = null,
+    val customHeightMm: Float? = null,
 )
 
 object Palette {

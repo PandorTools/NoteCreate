@@ -209,7 +209,7 @@ fun LibraryScreen(
                             }
                         }
                         if (compact) SearchField(query, { query = it }, Modifier.fillMaxWidth())
-                        if (compact && shelf == Shelf.ALL) {
+                        if (compact && shelf == Shelf.ALL && last == null) {
                             Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.primaryContainer,
                                 modifier = Modifier.fillMaxWidth()) {
                                 Row(Modifier.padding(horizontal = 18.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -233,7 +233,7 @@ fun LibraryScreen(
                         }
                     }
                 }
-                if (shelf == Shelf.ALL && last != null && query.isBlank() && !compact) {
+                if (shelf == Shelf.ALL && last != null && query.isBlank()) {
                     item(span = { GridItemSpan(maxLineSpan) }) { ContinueCard(last) { onOpen(last) } }
                 }
                 if (shelf == Shelf.TRASH && visible.isNotEmpty()) {

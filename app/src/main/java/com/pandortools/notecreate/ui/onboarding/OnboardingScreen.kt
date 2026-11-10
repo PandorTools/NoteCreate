@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -44,6 +46,7 @@ import com.pandortools.notecreate.ui.common.AppLogo
 import com.pandortools.notecreate.ui.library.ColorDot
 import com.pandortools.notecreate.ui.library.PaperOption
 import com.pandortools.notecreate.ui.library.Section
+import com.pandortools.notecreate.ui.library.drawPaperIcon
 import kotlinx.coroutines.launch
 
 /** Первый запуск: пользователь сам выбирает лист, ориентацию, бумагу и руку. */
@@ -76,6 +79,19 @@ fun OnboardingScreen(onDone: (Notebook) -> Unit) {
             Spacer(Modifier.height(4.dp))
             Section("Формат листа") {
                 PageFormat.entries.forEach { f -> FilterChip(format == f, { format = f }, { Text(f.title) }) }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.foundation.Canvas(Modifier.size(62.dp, 84.dp)) {
+                    drawPaperIcon(paper, paperColor)
+                }
+                Spacer(Modifier.width(14.dp))
+                Column {
+                    Text("Предпросмотр", style = MaterialTheme.typography.titleSmall)
+                    Text("${format.title} · ${if (orientation == Orientation.PORTRAIT) format.widthMm.toInt() else format.heightMm.toInt()} × ${if (orientation == Orientation.PORTRAIT) format.heightMm.toInt() else format.widthMm.toInt()} мм",
+                        style = MaterialTheme.typography.bodyMedium)
+                    Text("${paper.title} · ${orientation.title}", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
             Section("Как держишь планшет, когда пишешь") {
                 Orientation.entries.forEach { o -> FilterChip(orientation == o, { orientation = o }, { Text(o.title) }) }

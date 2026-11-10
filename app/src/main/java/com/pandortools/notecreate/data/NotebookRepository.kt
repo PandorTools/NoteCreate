@@ -68,6 +68,8 @@ class NotebookRepository(context: Context) {
             paperColor = spec.paperColor,
             format = spec.format,
             orientation = spec.orientation,
+            customWidthMm = spec.customWidthMm,
+            customHeightMm = spec.customHeightMm,
             pages = listOf(firstPage),
             pageDates = mapOf(firstPage to System.currentTimeMillis()),
         )
@@ -97,6 +99,8 @@ class NotebookRepository(context: Context) {
             paperColor = spec.paperColor,
             format = spec.format,
             orientation = spec.orientation,
+            customWidthMm = spec.customWidthMm,
+            customHeightMm = spec.customHeightMm,
             updatedAt = System.currentTimeMillis(),
         )
         save(updated)
@@ -287,6 +291,8 @@ class NotebookRepository(context: Context) {
         put("elastic", nb.elastic); put("ribbon", nb.ribbon)
         put("paperType", nb.paperType.name); put("paperColor", nb.paperColor)
         put("format", nb.format.name); put("orientation", nb.orientation.name)
+        nb.customWidthMm?.let { put("customWidthMm", it) }
+        nb.customHeightMm?.let { put("customHeightMm", it) }
         put("pages", JSONArray(nb.pages))
         put("pageDates", JSONObject().apply { nb.pageDates.forEach { (k, v) -> put(k, v) } })
         put("lastPage", nb.lastPage); put("favorite", nb.favorite)
@@ -313,6 +319,8 @@ class NotebookRepository(context: Context) {
             paperColor = o.getInt("paperColor"),
             format = enumOr(o.optString("format"), PageFormat.A5),
             orientation = enumOr(o.optString("orientation"), Orientation.PORTRAIT),
+            customWidthMm = if (o.has("customWidthMm")) o.optDouble("customWidthMm").toFloat() else null,
+            customHeightMm = if (o.has("customHeightMm")) o.optDouble("customHeightMm").toFloat() else null,
             pages = pages,
             pageDates = dates,
             lastPage = o.optInt("lastPage", 0).coerceIn(0, max(0, pages.size - 1)),

@@ -23,6 +23,7 @@ import com.pandortools.notecreate.data.ImageItem
 import com.pandortools.notecreate.data.Notebook
 import com.pandortools.notecreate.data.PageData
 import com.pandortools.notecreate.data.PageTurnStyle
+import com.pandortools.notecreate.data.ThreeFingerAction
 import com.pandortools.notecreate.data.PenType
 import com.pandortools.notecreate.data.Stroke
 import kotlin.math.PI
@@ -69,6 +70,7 @@ class PageView(context: Context) : View(context) {
     var fingerDraw = false
     var smoothing = 0.35f
     var turnStyle = PageTurnStyle.CURL
+    var threeFingerAction = ThreeFingerAction.REDO
     var deskColor = Color.rgb(233, 228, 218)
         set(value) { field = value; invalidate() }
 
@@ -921,7 +923,11 @@ class PageView(context: Context) : View(context) {
     private fun finishPinch(e: MotionEvent) {
         val quick = e.eventTime - downTime < 300
         if (!gestureMoved && quick) {
-            if (maxPointers == 2) undo() else if (maxPointers >= 3) redo()
+            if (maxPointers == 2) undo() else if (maxPointers >= 3) when (threeFingerAction) {
+                ThreeFingerAction.REDO -> redo()
+                ThreeFingerAction.UNDO -> undo()
+                ThreeFingerAction.NONE -> Unit
+            }
         }
         if (userScale() < 1.03f) userMatrix.reset()
         updateMatrices()

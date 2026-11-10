@@ -129,7 +129,7 @@ fun EditorScreen(notebookId: String, onBack: () -> Unit) {
     var tool by remember { mutableStateOf(EditorTool.PEN) }
     var pen by remember { mutableStateOf(PenType.BALLPOINT) }
     var color by remember { mutableIntStateOf(settings.favoriteColors.firstOrNull() ?: android.graphics.Color.BLACK) }
-    var eraserMode by remember { mutableStateOf(EraserMode.STROKE) }
+    var eraserMode by remember { mutableStateOf(EraserMode.AREA) }
     var eraserSize by remember { mutableFloatStateOf(8f) }
     var eraseOnlyHighlighter by remember { mutableStateOf(false) }
     var canUndo by remember { mutableStateOf(false) }
@@ -275,6 +275,7 @@ fun EditorScreen(notebookId: String, onBack: () -> Unit) {
                     v.fingerDraw = settings.fingerDraw
                     v.smoothing = settings.smoothing
                     v.turnStyle = settings.pageTurn
+                    v.threeFingerAction = settings.threeFingerAction
                     v.deskColor = darkDesk
                     page?.let { p -> v.setPage(p.id, p.data, p.date) }
                 },
@@ -330,10 +331,10 @@ fun EditorScreen(notebookId: String, onBack: () -> Unit) {
                         DropdownMenu(expanded = showWidth, onDismissRequest = { showWidth = false }) {
                             Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp).width(280.dp)) {
                                 if (tool == EditorTool.ERASER) {
-                                    Text("Ластик", style = MaterialTheme.typography.titleSmall)
+                                    Text("Ластик · стирает только под кончиком", style = MaterialTheme.typography.titleSmall)
                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        FilterChip(eraserMode == EraserMode.STROKE, { eraserMode = EraserMode.STROKE }, { Text("Штрих целиком") })
-                                        FilterChip(eraserMode == EraserMode.AREA, { eraserMode = EraserMode.AREA }, { Text("Область") })
+                                        FilterChip(eraserMode == EraserMode.AREA, { eraserMode = EraserMode.AREA }, { Text("Частично") })
+                                        FilterChip(eraserMode == EraserMode.STROKE, { eraserMode = EraserMode.STROKE }, { Text("Весь штрих") })
                                     }
                                     Text("Размер: ${eraserSize.roundToInt()}", style = MaterialTheme.typography.bodySmall)
                                     Slider(eraserSize, { eraserSize = it }, valueRange = 2f..40f)

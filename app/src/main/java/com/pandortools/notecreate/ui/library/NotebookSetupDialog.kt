@@ -42,6 +42,7 @@ import androidx.compose.material3.Button
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -81,6 +82,8 @@ fun NotebookSetupDialog(
     var elastic by remember { mutableStateOf(existing?.elastic ?: true) }
     var ribbon by remember { mutableStateOf(existing?.ribbon ?: true) }
     var format by remember { mutableStateOf(existing?.format ?: defaults.defaultFormat) }
+    var customWidth by remember { mutableFloatStateOf(existing?.customWidthMm ?: 210f) }
+    var customHeight by remember { mutableFloatStateOf(existing?.customHeightMm ?: 297f) }
     var orientation by remember { mutableStateOf(existing?.orientation ?: defaults.defaultOrientation) }
     var paper by remember { mutableStateOf(existing?.paperType ?: defaults.defaultPaper) }
     var paperColor by remember { mutableIntStateOf(existing?.paperColor ?: defaults.defaultPaperColor) }
@@ -96,7 +99,9 @@ fun NotebookSetupDialog(
         ) {
             BoxWithConstraints {
                 val wide = maxWidth > 640.dp
-                val aspect = if (orientation == Orientation.PORTRAIT) format.widthMm / format.heightMm else format.heightMm / format.widthMm
+                val rawW = if (format == PageFormat.CUSTOM) customWidth else format.widthMm
+                val rawH = if (format == PageFormat.CUSTOM) customHeight else format.heightMm
+                val aspect = if (orientation == Orientation.PORTRAIT) rawW / rawH else rawH / rawW
                 val preview: @Composable (Modifier) -> Unit = { m ->
                     Column(m, horizontalAlignment = Alignment.CenterHorizontally) {
                         NotebookCover(
@@ -105,8 +110,15 @@ fun NotebookSetupDialog(
                             modifier = Modifier.width(if (wide) 220.dp else 150.dp).aspectRatio(aspect),
                         )
                         Spacer(Modifier.height(12.dp))
-                        Text("${format.title} · ${orientation.title.lowercase()} · ${paper.title.lowercase()}",
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Canvas(Modifier.size(36.dp, 48.dp).clip(RoundedCornerShape(5.dp))) { drawPaperIcon(paper, paperColor) }
+                            Column {
+                                Text("${format.title} · ${rawW.toInt()} × ${rawH.toInt()} мм",
+                                    style = MaterialTheme.typography.labelLarge)
+                                Text("${orientation.title} · ${paper.title.lowercase()}",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
                     }
                 }
                 val options: @Composable (Modifier) -> Unit = { m ->
@@ -141,6 +153,14 @@ fun NotebookSetupDialog(
                                 FilterChip(selected = format == f, onClick = { format = f }, label = { Text(f.title) })
                             }
                         }
+                        if (format == PageFormat.CUSTOM) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                OutlinedTextField(value = customWidth.toInt().toString(), onValueChange = { customWidth = it.toFloatOrNull()?.coerceIn(50f, 1000f) ?: customWidth },
+                                    label = { Text("Ширина, мм") }, singleLine = true, modifier = Modifier.weight(1f))
+                                OutlinedTextField(value = customHeight.toInt().toString(), onValueChange = { customHeight = it.toFloatOrNull()?.coerceIn(50f, 1000f) ?: customHeight },
+                                    label = { Text("Высота, мм") }, singleLine = true, modifier = Modifier.weight(1f))
+                            }
+                        }
                         Section("Ориентация") {
                             Orientation.entries.forEach { o ->
                                 FilterChip(selected = orientation == o, onClick = { orientation = o }, label = { Text(o.title) })
@@ -164,6 +184,8 @@ fun NotebookSetupDialog(
                                         template = template, coverColor = coverColor, coverMaterial = material,
                                         elastic = elastic, ribbon = ribbon, paperType = paper, paperColor = paperColor,
                                         format = format, orientation = orientation,
+                                        customWidthMm = if (format == PageFormat.CUSTOM) customWidth else null,
+                                        customHeightMm = if (format == PageFormat.CUSTOM) customHeight else null,
                                     )
                                 )
                             }) { Text(if (existing == null) "Создать" else "Сохранить") }

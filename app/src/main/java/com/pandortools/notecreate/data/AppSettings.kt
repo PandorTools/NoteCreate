@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 enum class PageTurnStyle(val title: String) { CURL("Сгиб листа"), SLIDE("Сдвиг"), NONE("Без анимации") }
+enum class ThreeFingerAction(val title: String) { REDO("Повторить"), UNDO("Отменить"), NONE("Выключено") }
 enum class StartScreen(val title: String) { LIBRARY("Библиотека"), LAST_NOTEBOOK("Последняя тетрадь") }
 enum class ThemeMode(val title: String) { SYSTEM("Как в системе"), LIGHT("Светлая"), DARK("Тёмная") }
 
@@ -19,6 +20,7 @@ data class SettingsState(
     val leftHanded: Boolean = false,
     val fingerDraw: Boolean = false,
     val pageTurn: PageTurnStyle = PageTurnStyle.CURL,
+    val threeFingerAction: ThreeFingerAction = ThreeFingerAction.REDO,
     val startScreen: StartScreen = StartScreen.LIBRARY,
     val newDayNewPage: Boolean = true,
     val theme: ThemeMode = ThemeMode.SYSTEM,
@@ -60,6 +62,7 @@ class AppSettings(context: Context) {
             leftHanded = prefs.getBoolean("leftHanded", false),
             fingerDraw = prefs.getBoolean("fingerDraw", false),
             pageTurn = e("pageTurn", PageTurnStyle.entries.toTypedArray(), d.pageTurn),
+            threeFingerAction = e("threeFingerAction", ThreeFingerAction.entries.toTypedArray(), d.threeFingerAction),
             startScreen = e("startScreen", StartScreen.entries.toTypedArray(), d.startScreen),
             newDayNewPage = prefs.getBoolean("newDayNewPage", true),
             theme = e("theme", ThemeMode.entries.toTypedArray(), d.theme),
@@ -80,6 +83,7 @@ class AppSettings(context: Context) {
         putBoolean("leftHanded", s.leftHanded)
         putBoolean("fingerDraw", s.fingerDraw)
         putString("pageTurn", s.pageTurn.name)
+        putString("threeFingerAction", s.threeFingerAction.name)
         putString("startScreen", s.startScreen.name)
         putBoolean("newDayNewPage", s.newDayNewPage)
         putString("theme", s.theme.name)

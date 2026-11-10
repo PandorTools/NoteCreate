@@ -43,6 +43,7 @@ import com.pandortools.notecreate.data.AppGraph
 import com.pandortools.notecreate.data.Orientation
 import com.pandortools.notecreate.data.PageFormat
 import com.pandortools.notecreate.data.PageTurnStyle
+import com.pandortools.notecreate.data.ThreeFingerAction
 import com.pandortools.notecreate.data.StartScreen
 import com.pandortools.notecreate.data.ThemeMode
 import com.pandortools.notecreate.ui.common.AppLogo
@@ -73,6 +74,11 @@ fun SettingsScreen(onBack: () -> Unit) {
                 SwitchRow("Режим для левши", "Номер страницы и кнопки — с другой стороны", s.leftHanded) {
                     store.update { st -> st.copy(leftHanded = it) }
                 }
+                Choice("Тройное касание тремя пальцами", ThreeFingerAction.entries, s.threeFingerAction, { it.title }) {
+                    v -> store.update { it.copy(threeFingerAction = v) }
+                }
+                Text("Тройное касание тремя пальцами в любой точке листа выполняет выбранное действие. Щипок двумя пальцами масштабирует и перемещает страницу; касание у края перелистывает её.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("Кнопки стилуса настраиваются в системных настройках пера. " +
                     "Удержание нижней кнопки во время письма включает временный ластик.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
