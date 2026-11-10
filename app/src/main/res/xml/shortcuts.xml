@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="continue"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_today">
+        <intent
+            android:action="com.pandortools.notecreate.CONTINUE"
+            android:targetPackage="com.pandortools.notecreate"
+            android:targetClass="com.pandortools.notecreate.MainActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="quick"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_quick">
+        <intent
+            android:action="com.pandortools.notecreate.QUICK_NOTE"
+            android:targetPackage="com.pandortools.notecreate"
+            android:targetClass="com.pandortools.notecreate.MainActivity" />
+    </shortcut>
+</shortcuts>

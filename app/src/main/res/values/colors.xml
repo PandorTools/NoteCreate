@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="nc_ink">#1E2A44</color>
+    <color name="nc_accent">#E8734A</color>
+    <color name="nc_cream">#F6F1E7</color>
+    <color name="nc_pages">#DDD3BF</color>
+    <color name="ic_launcher_background">#F6F1E7</color>
+</resources>
