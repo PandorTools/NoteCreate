@@ -20,6 +20,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -36,6 +42,7 @@ import androidx.compose.material.icons.outlined.Restore
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.StarBorder
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -45,6 +52,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -63,6 +73,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.pandortools.notecreate.data.AppGraph
@@ -75,6 +86,19 @@ import java.util.Date
 import java.util.Locale
 
 private enum class Shelf(val title: String) { ALL("Все"), FAVORITES("Избранное"), TRASH("Корзина") }
+
+@Composable
+private fun SearchField(query: String, onQueryChange: (String) -> Unit, modifier: Modifier = Modifier) {
+    OutlinedTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        placeholder = { Text("Найти тетрадь") },
+        leadingIcon = { Icon(Icons.Outlined.Search, null) },
+        singleLine = true,
+        shape = RoundedCornerShape(22.dp),
+        modifier = modifier,
+    )
+}
 
 @Composable
 fun LibraryScreen(
@@ -100,8 +124,10 @@ fun LibraryScreen(
     }.filter { query.isBlank() || it.title.contains(query.trim(), ignoreCase = true) }
     val last = all.firstOrNull { it.id == settings.lastNotebookId && it.deletedAt == null }
 
+    val compact = LocalConfiguration.current.screenWidthDp < 700
+
     Row(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        NavigationRail(containerColor = MaterialTheme.colorScheme.surfaceContainerLow, header = {
+        if (!compact) NavigationRail(containerColor = MaterialTheme.colorScheme.surfaceContainerLow, header = {
             AppLogo(Modifier.padding(top = 12.dp).size(48.dp))
             Spacer(Modifier.height(12.dp))
         }) {
@@ -119,6 +145,21 @@ fun LibraryScreen(
 
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
+            bottomBar = {
+                if (compact) NavigationBar(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                    windowInsets = WindowInsets.navigationBars,
+                ) {
+                    NavigationBarItem(selected = shelf == Shelf.ALL, onClick = { shelf = Shelf.ALL },
+                        icon = { Icon(Icons.Outlined.Book, null) }, label = { Text("Тетради") })
+                    NavigationBarItem(selected = shelf == Shelf.FAVORITES, onClick = { shelf = Shelf.FAVORITES },
+                        icon = { Icon(Icons.Outlined.StarBorder, null) }, label = { Text("Избранное") })
+                    NavigationBarItem(selected = shelf == Shelf.TRASH, onClick = { shelf = Shelf.TRASH },
+                        icon = { Icon(Icons.Outlined.Delete, null) }, label = { Text("Корзина") })
+                    NavigationBarItem(selected = false, onClick = onSettings,
+                        icon = { Icon(Icons.Outlined.Settings, null) }, label = { Text("Настройки") })
+                }
+            },
             floatingActionButton = {
                 if (shelf != Shelf.TRASH) {
                     ExtendedFloatingActionButton(
@@ -132,30 +173,67 @@ fun LibraryScreen(
             },
         ) { pad ->
             LazyVerticalGrid(
-                columns = GridCells.Adaptive(150.dp),
+                columns = GridCells.Adaptive(if (compact) 142.dp else 170.dp),
                 modifier = Modifier.fillMaxSize().padding(pad),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 28.dp, end = 28.dp, top = 20.dp, bottom = 120.dp),
-                horizontalArrangement = Arrangement.spacedBy(24.dp),
-                verticalArrangement = Arrangement.spacedBy(28.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(start = if (compact) 20.dp else 36.dp, end = if (compact) 20.dp else 36.dp, top = if (compact) 18.dp else 28.dp, bottom = 108.dp),
+                horizontalArrangement = Arrangement.spacedBy(if (compact) 16.dp else 28.dp),
+                verticalArrangement = Arrangement.spacedBy(if (compact) 22.dp else 32.dp),
             ) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            if (shelf == Shelf.TRASH) "Корзина" else "Мои тетради",
-                            style = MaterialTheme.typography.headlineMedium,
-                            modifier = Modifier.weight(1f),
-                        )
-                        OutlinedTextField(
-                            value = query, onValueChange = { query = it },
-                            placeholder = { Text("Поиск") },
-                            leadingIcon = { Icon(Icons.Outlined.Search, null) },
-                            singleLine = true,
-                            shape = RoundedCornerShape(28.dp),
-                            modifier = Modifier.width(280.dp),
-                        )
+                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        if (compact) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                AppLogo(Modifier.size(38.dp))
+                                Spacer(Modifier.width(12.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(if (shelf == Shelf.TRASH) "Удалённые тетради" else "NoteCreate", style = MaterialTheme.typography.titleMedium)
+                                    Text("Твоё пространство для идей", style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Text(if (shelf == Shelf.TRASH) "Корзина" else if (shelf == Shelf.FAVORITES) "Избранное" else "Мои тетради",
+                                    style = MaterialTheme.typography.headlineMedium)
+                                Text(if (shelf == Shelf.ALL) "Продолжай писать и сохраняй свои мысли." else "Твои тетради всегда под рукой.",
+                                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        } else {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(if (shelf == Shelf.TRASH) "Корзина" else if (shelf == Shelf.FAVORITES) "Избранное" else "Мои тетради",
+                                        style = MaterialTheme.typography.headlineMedium)
+                                    Text("Твоё пространство для идей", style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                SearchField(query, { query = it }, Modifier.widthIn(min = 220.dp, max = 320.dp))
+                            }
+                        }
+                        if (compact) SearchField(query, { query = it }, Modifier.fillMaxWidth())
+                        if (compact && shelf == Shelf.ALL) {
+                            Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.primaryContainer,
+                                modifier = Modifier.fillMaxWidth()) {
+                                Row(Modifier.padding(horizontal = 18.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text("Тихое место для мыслей", style = MaterialTheme.typography.titleMedium)
+                                        Text("Создай тетрадь и начни с чистого листа", style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f))
+                                    }
+                                    Icon(Icons.AutoMirrored.Outlined.MenuBook, null, tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(28.dp))
+                                }
+                            }
+                        }
+                        if (compact && shelf == Shelf.ALL) {
+                            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FilterChip(selected = true, onClick = { shelf = Shelf.ALL }, label = { Text("Все") },
+                                    leadingIcon = { Icon(Icons.Outlined.Book, null, Modifier.size(18.dp)) })
+                                FilterChip(selected = false, onClick = { shelf = Shelf.FAVORITES }, label = { Text("Избранное") },
+                                    leadingIcon = { Icon(Icons.Outlined.StarBorder, null, Modifier.size(18.dp)) })
+                            }
+                        }
                     }
                 }
-                if (shelf == Shelf.ALL && last != null && query.isBlank()) {
+                if (shelf == Shelf.ALL && last != null && query.isBlank() && !compact) {
                     item(span = { GridItemSpan(maxLineSpan) }) { ContinueCard(last) { onOpen(last) } }
                 }
                 if (shelf == Shelf.TRASH && visible.isNotEmpty()) {

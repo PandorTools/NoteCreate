@@ -467,6 +467,15 @@ class PageView(context: Context) : View(context) {
         return t == MotionEvent.TOOL_TYPE_STYLUS || t == MotionEvent.TOOL_TYPE_ERASER
     }
 
+    /** Palm contacts are substantially wider than finger contacts on digitizers. */
+    private fun isPalmTouch(e: MotionEvent, idx: Int): Boolean {
+        if (isStylus(e, idx)) return false
+        val major = e.getToolMajor(idx)
+        val minor = e.getToolMinor(idx)
+        val threshold = 72f * density
+        return (major >= threshold && minor >= threshold * 0.62f) || e.getSize(idx) >= 0.82f
+    }
+
     private fun toPage(x: Float, y: Float): PointF {
         val p = floatArrayOf(x, y); inverse.mapPoints(p); return PointF(p[0], p[1])
     }
@@ -478,10 +487,19 @@ class PageView(context: Context) : View(context) {
         if (turnState != null) return handleTurn(e)
 
         val action = e.actionMasked
+        val palmCanceled = action == MotionEvent.ACTION_POINTER_UP && (e.flags and MotionEvent.FLAG_CANCELED) != 0 &&
+            !isStylus(e, e.actionIndex)
         val canceled = action == MotionEvent.ACTION_CANCEL ||
             (action == MotionEvent.ACTION_POINTER_UP && (e.flags and MotionEvent.FLAG_CANCELED) != 0 &&
                 e.getPointerId(e.actionIndex) == activePointerId)
 
+        if (palmCanceled) {
+            if (mode == Mode.FINGER_IDLE || mode == Mode.TURN_PENDING || mode == Mode.PAN || mode == Mode.PINCH) {
+                mode = Mode.NONE
+                removeCallbacks(longPressRunnable)
+            }
+            return true
+        }
         if (canceled) {
             cancelGesture()
             return true
@@ -500,6 +518,14 @@ class PageView(context: Context) : View(context) {
                     requestUnbufferedDispatch(e)
                     startPrimary(e, idx, stylus = true)
                 } else {
+                    // Reject broad palm contacts before they can start drawing or a gesture.
+                    if (isPalmTouch(e, idx)) {
+                        if (mode == Mode.FINGER_IDLE || mode == Mode.TURN_PENDING || mode == Mode.PAN || mode == Mode.PINCH) {
+                            mode = Mode.NONE
+                            removeCallbacks(longPressRunnable)
+                        }
+                        return true
+                    }
                     val stylusRecently = e.eventTime - lastStylusTime < 600
                     if (mode == Mode.DRAW || mode == Mode.ERASE || mode == Mode.LASSO ||
                         mode == Mode.SEL_MOVE || mode == Mode.SEL_SCALE) {
